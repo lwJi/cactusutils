@@ -17,7 +17,6 @@
 #include "cctk_WarnLevel.h"
 #include "cctk_Parameters.h"
 #include "cctk_Termination.h"
-
 /* the rcsid and the macro to use it */
 static char *rcsid = "$Header$";
 CCTK_FILEVERSION(BetaThorns_NaNChecker_NaNCheck_c)
@@ -307,7 +306,7 @@ static void NaNCheck (int vindex, const char *optstring, void *_GH)
 
   if (fp_type)
   {
-    gindex = CCTK_GroupTypeFromVarI (vindex);
+    gindex = CCTK_GroupIndexFromVarI (vindex);
 
     /* check if variable has storage assigned */
     if (CCTK_QueryGroupStorageI (GH, gindex))
@@ -315,7 +314,7 @@ static void NaNCheck (int vindex, const char *optstring, void *_GH)
       /* get the number of elements to check for this variable */
       nelems = 1;
       gdata.dim = 0;
-      if (CCTK_GroupTypeFromVarI (vindex) != CCTK_SCALAR)
+      if (CCTK_GroupTypeI (vindex) != CCTK_SCALAR)
       {
         CCTK_GroupDynamicData (GH, gindex, &gdata);
         for (i = 0; i < gdata.dim; i++)
@@ -331,10 +330,10 @@ static void NaNCheck (int vindex, const char *optstring, void *_GH)
       }
 
       /* get the pointer to the data (current time level) */
-      data = CCTK_VarDataPtrI (GH, CCTK_NumTimeLevelsFromVarI(vindex)-1,vindex);
+      data = CCTK_VarDataPtrI (GH, 0, vindex);
 
       /* do the checking according to the variable's type */
-  	if (vtype == CCTK_VARIABLE_REAL || CCTK_VARIABLE_COMPLEX)
+      if (vtype == CCTK_VARIABLE_REAL || CCTK_VARIABLE_COMPLEX)
       {
         CHECK_DATA (CCTK_REAL);
       }
