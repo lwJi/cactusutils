@@ -30,7 +30,7 @@ namespace Formaline
   
 
   static bool
-  is_clean_for_shell (char const * string);
+  is_clean_for_shell (char const * str);
   
   
   
@@ -398,9 +398,9 @@ namespace Formaline
 
   
   static bool
-  is_clean_for_shell (char const * const string)
+  is_clean_for_shell (char const * const str)
   {
-    for (char const * p = string; * p; ++ p)
+    for (char const * p = str; * p; ++ p)
     {
       if (! isalnum (* p))
       {
