@@ -18,7 +18,7 @@
 #  include <ammintrin.h>
 #endif
 #ifdef __FMA4__
-#  include <fma4intrin.h>
+#  include <x86intrin.h>
 #endif
 
 
