@@ -4,7 +4,7 @@
 #include <cctk.h>
 #include <cassert>
 #include <vector>
-
+#include <iostream>
 
 
 namespace Accelerator {
@@ -74,11 +74,40 @@ namespace Accelerator {
     int nvars() const { return vis.size(); }
   };
   
-  
-  
-  struct mem_t {
-    bool host_valid, device_valid;
+  struct mem_t;
+
+  struct bool_field {
+    mem_t *m;
+    bool f;
+    bool_field(mem_t *m_,bool f_) : m(m_), f(f_) {}
+    void operator=(bool b);
+    operator bool() const {
+      return f;
+    }
   };
+  enum bfield { host_field=0, device_field=1 };
+  // Allow us to track when changes are made to mem_t
+  struct mem_t {
+    bool_field host_valid, device_valid;
+    mem_t() : host_valid(this,true), device_valid(this,false) {}
+    mem_t(bool h,bool d) : host_valid(this,h), device_valid(this,d) {}
+    void check() {
+      assert(host_valid || device_valid);
+    }
+    bool_field& operator[](int n) {
+      assert(n == 0 || n == 1);
+      if(n == 0)
+        return host_valid;
+      else
+        return device_valid;
+    }
+  };
+  inline void bool_field::operator=(bool b) {
+    //assert(m->host_valid || m->device_valid);
+    f = b;
+    assert(m != 0);
+    //assert(m->host_valid || m->device_valid);
+  }
   
   class device_t {
     vector<vector<vector<mem_t> > > mems; // [vi][rl][tl]
@@ -113,10 +142,42 @@ namespace Accelerator {
       ensure_reflevel(vi, rl);
       return mems.at(vi).at(rl).at(tl);
     }
+
+    mem_t *get(int vi,int rl,int tl) {
+        const char *var_name = CCTK_VarName(vi);
+        if(var_name == 0)
+          return 0;
+        if(vi >= mems.size())
+          return 0;
+        if(rl >= mems[vi].size())
+          return 0;
+        if(tl >= mems[vi][rl].size())
+          return 0;
+        return &mems[vi][rl][tl];
+    }
+
+    void dump() {
+      std::cout << "Accel:dump {{{" << std::endl;
+      for(int vi=0;vi<mems.size();vi++) {
+        const char *var_name = CCTK_VarName(vi);
+        if(var_name == 0)
+          continue;
+        for(int rl=0;rl<mems[vi].size();rl++) {
+          for(int tl=0;tl<mems[vi][rl].size();tl++) {
+            mem_t& m = mems[vi][rl][tl];
+            std::cout << "::dump " << var_name << "(" << vi << "):" << rl << ":" << tl << "={" << m.host_valid << "," << m.device_valid << "}" << std::endl;
+          }
+        }
+      }
+      std::cout << "}}} Accel:dump" << std::endl;
+    }
   };
   
   extern device_t *device;
   
 } // namespace Accelerator
+
+extern "C" void Accel_varlocation(int vi,int rl,int tl,char *data);
+extern "C" void Accel_dump();
 
 #endif  // #ifndef ACCELERATOR_HH

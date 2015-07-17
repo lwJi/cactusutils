@@ -3,8 +3,7 @@
 IMPLEMENTS: Accelerator
 
 USES INCLUDE HEADER: carpet.hh
-
-
+INCLUDE HEADER: accelerator.hh in accel.hh
 
 # Adaptive mesh refinement and multi-block
 

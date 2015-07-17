@@ -11,6 +11,7 @@
 #include <cstring>
 #include <iostream>
 #include <sstream>
+#include <stdexcept>
 
 using namespace std;
 
@@ -174,6 +175,7 @@ namespace Accelerator {
       if (device->ntimelevels(vi, rl) == tl) {
         // We assume the host does not have valid data (otherwise, why
         // would the code copy to the current timelevel?)
+        std::cout << "Create(" << vi << "," << rl << "," << tl << ")" << std::endl;
         mem_t const newmem = {false, false};
         device->create_timelevel(vi, rl, tl, newmem);
         unknowns.push_back(vi, rl, tl);
@@ -291,7 +293,8 @@ namespace Accelerator {
     
     // Copy all required variables to the device or to the host,
     // depending on the language (device or not)
-    bool mem_t::*dst_valid, mem_t::*src_valid;
+    //bool mem_t::*dst_valid=0, mem_t::*src_valid=0;
+    bfield dst_valid,src_valid;
     CCTK_INT (*copy) (CCTK_POINTER_TO_CONST cctkGH,
                       CCTK_INT const *vars,
                       CCTK_INT const *rls,
@@ -299,12 +302,16 @@ namespace Accelerator {
                       CCTK_INT nvars,
                       CCTK_INT *moved);
     if (is_device) {
-      dst_valid = &mem_t::device_valid;
-      src_valid = &mem_t::host_valid;
+      //dst_valid = &mem_t::device_valid;
+      //src_valid = &mem_t::host_valid;
+      dst_valid = bfield::device_field;
+      src_valid = bfield::host_field;
       copy = Device_CopyToDevice;
     } else {
-      dst_valid = &mem_t::host_valid;
-      src_valid = &mem_t::device_valid;
+      //dst_valid = &mem_t::host_valid;
+      //src_valid = &mem_t::device_valid;
+      dst_valid = bfield::host_field;
+      src_valid = bfield::device_field;
       copy = Device_CopyToHost;
     }
     
@@ -345,15 +352,16 @@ namespace Accelerator {
               unknowns.push_back(vi, rl, tl);
             }
             
-            if (not (device->mem(vi, rl, tl).*dst_valid)) {
-              if (not (device->mem(vi, rl, tl).*src_valid)) {
+            if (not (device->mem(vi, rl, tl)[dst_valid])) {
+              if (not (device->mem(vi, rl, tl)[src_valid])) {
+                std::cout << "DIAG: " << dst_valid << "/" << src_valid << ":" << device->mem(vi, rl, tl)[dst_valid] << "/" << device->mem(vi, rl, tl)[src_valid] << std::endl;
                 CCTK_VWarn(CCTK_WARN_ABORT, __LINE__, __FILE__, CCTK_THORNSTRING,
                            "Variable %s:%d is neither valid on the host nor on the device before function %s::%s",
                            CCTK_FullName(vi), tl,attribute->thorn,attribute->routine);
               }
               vars.push_back(vi, rl, tl);
               // This will be true after the copy operation below
-              device->mem(vi, rl, tl).*dst_valid = true;
+              device->mem(vi, rl, tl)[dst_valid] = true;
             }
             
           }
@@ -393,8 +401,10 @@ namespace Accelerator {
             // This variable was written by the function which will
             // execute, therefore it will be valid there and invalid
             // elsewhere.
-            device->mem(vi, rl, tl).*dst_valid = true;
-            device->mem(vi, rl, tl).*src_valid = false;
+            std::cout << "DIAG: " << dst_valid << "/" << src_valid << ":" << device->mem(vi, rl, tl)[dst_valid] << "/" << device->mem(vi, rl, tl)[src_valid] << std::endl;
+            device->mem(vi, rl, tl)[dst_valid] = true;
+            std::cout << "DIAG2: " << dst_valid << "/" << src_valid << ":" << device->mem(vi, rl, tl)[dst_valid] << "/" << device->mem(vi, rl, tl)[src_valid] << std::endl;
+            device->mem(vi, rl, tl)[src_valid] = false;
             
           }
         }
@@ -429,7 +439,7 @@ namespace Accelerator {
         int const vi = vars.vi_ptr()[var];
         int const rl = vars.rl_ptr()[var];
         int const tl = vars.tl_ptr()[var];
-        device->mem(vi, rl, tl).*src_valid = false;
+        device->mem(vi, rl, tl)[src_valid] = false;
       }
     }
     
@@ -721,21 +731,30 @@ namespace Accelerator {
       CCTK_VInfo(CCTK_THORNSTRING, "NotifyDataModified");
     }
     
-    bool mem_t::*valid, mem_t::*invalid;
+    //bool mem_t::*valid=0, mem_t::*invalid=0;
+    bfield valid, invalid;
     if (on_device) {
-      valid   = &mem_t::device_valid;
-      invalid = &mem_t::host_valid;
+      //valid   = &mem_t::device_valid;
+      //invalid = &mem_t::host_valid;
+      valid = bfield::device_field;
+      invalid = bfield::host_field;
     } else {
-      valid   = &mem_t::host_valid;
-      invalid = &mem_t::device_valid;
+      //valid   = &mem_t::host_valid;
+      //invalid = &mem_t::device_valid;
+      valid = bfield::host_field;
+      invalid = bfield::device_field;
     }
+    assert(valid != invalid);
     
     for (int var=0; var<nvariables; ++var) {
       int const vi = variables[var];
       int const rl = rls[var];
       int const tl = tls[var];
-      device->mem(vi, rl, tl).*valid   = true;
-      device->mem(vi, rl, tl).*invalid = false;
+      std::cout << "1: vi=" << vi << std::endl;
+      device->mem(vi, rl, tl)[valid]   = true;
+      std::cout << "2: vi=" << vi << std::endl;
+      device->mem(vi, rl, tl)[invalid] = false;
+      std::cout << "3: vi=" << vi << std::endl;
     }
     
     return 0;
@@ -778,7 +797,14 @@ namespace Accelerator {
         mem_t const newmem = {false, false};
         device->create_timelevel(vi, rl, tl, newmem);
         unknowns.push_back(vi, rl, tl);
+        std::cout << "create_timelevel(" << vi << "," << rl << "," << tl << ")" << std::endl;
       }
+      mem_t *m = device->get(vi,rl,tl);
+      assert(m != 0);
+      if(on_device)
+        m->device_valid = true;
+      else
+        m->host_valid = true;
     }
     
     Device_CreateVariables
@@ -810,7 +836,8 @@ namespace Accelerator {
     
     // Copy all required variables to the device or to the host,
     // depending on the language (device or not)
-    bool mem_t::*dst_valid, mem_t::*src_valid;
+    //bool mem_t::*dst_valid=0, mem_t::*src_valid=0;
+    bfield dst_valid, src_valid;
     CCTK_INT (*copy) (CCTK_POINTER_TO_CONST cctkGH,
                       CCTK_INT const *vars,
                       CCTK_INT const *rls,
@@ -818,12 +845,16 @@ namespace Accelerator {
                       CCTK_INT nvars,
                       CCTK_INT *moved);
     if (on_device) {
-      dst_valid = &mem_t::device_valid;
-      src_valid = &mem_t::host_valid;
+      //dst_valid = &mem_t::device_valid;
+      //src_valid = &mem_t::host_valid;
+      dst_valid = bfield::device_field;
+      src_valid = bfield::host_field;
       copy = Device_CopyToDevice;
     } else {
-      dst_valid = &mem_t::host_valid;
-      src_valid = &mem_t::device_valid;
+      //dst_valid = &mem_t::host_valid;
+      //src_valid = &mem_t::device_valid;
+      dst_valid = bfield::host_field;
+      src_valid = bfield::device_field;
       copy = Device_CopyToHost;
     }
     
@@ -849,8 +880,8 @@ namespace Accelerator {
         unknowns.push_back(vi, rl, tl);
       }
       
-      if (not (device->mem(vi, rl, tl).*dst_valid)) {
-        assert(device->mem(vi, rl, tl).*src_valid);
+      if (not (device->mem(vi, rl, tl)[dst_valid])) {
+        assert(device->mem(vi, rl, tl)[src_valid]);
         vars.push_back(vi, rl, tl);
       }
     }
@@ -869,7 +900,7 @@ namespace Accelerator {
         int const vi = vars.vi_ptr()[var];
         int const rl = vars.rl_ptr()[var];
         int const tl = vars.tl_ptr()[var];
-        device->mem(vi, rl, tl).*src_valid = false;
+        device->mem(vi, rl, tl)[src_valid] = false;
       }
     }
     
@@ -952,3 +983,23 @@ namespace Accelerator {
   }
      
 } // namespace Accelerator
+
+void Accel_varlocation(int vi,int rl,int tl,char *data) {
+  int n = 0;
+  Accelerator::mem_t *m = Accelerator::device->get(vi,rl,tl);
+  if(m == 0) {
+    data[n++] = 'U';
+  } else {
+    if(m->host_valid) {
+      data[n++] = 'H';
+    }
+    if(m->device_valid) {
+      data[n++] = 'D';
+    }
+  }
+  data[n] = 0;
+}
+
+void Accel_dump() {
+  Accelerator::device->dump();
+}
