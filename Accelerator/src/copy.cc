@@ -401,11 +401,10 @@ namespace Accelerator {
             // This variable was written by the function which will
             // execute, therefore it will be valid there and invalid
             // elsewhere.
-            std::cout << "DIAG: " << dst_valid << "/" << src_valid << ":" << device->mem(vi, rl, tl)[dst_valid] << "/" << device->mem(vi, rl, tl)[src_valid] << std::endl;
-            device->mem(vi, rl, tl)[dst_valid] = true;
-            std::cout << "DIAG2: " << dst_valid << "/" << src_valid << ":" << device->mem(vi, rl, tl)[dst_valid] << "/" << device->mem(vi, rl, tl)[src_valid] << std::endl;
-            device->mem(vi, rl, tl)[src_valid] = false;
-            
+            //std::cout << "DIAG: " << dst_valid << "/" << src_valid << ":" << device->mem(vi, rl, tl)[dst_valid] << "/" << device->mem(vi, rl, tl)[src_valid] << std::endl;
+            //device->mem(vi, rl, tl)[dst_valid] = true;
+            //std::cout << "DIAG2: " << dst_valid << "/" << src_valid << ":" << device->mem(vi, rl, tl)[dst_valid] << "/" << device->mem(vi, rl, tl)[src_valid] << std::endl;
+            //device->mem(vi, rl, tl)[src_valid] = false;
           }
         }
       }
@@ -431,6 +430,27 @@ namespace Accelerator {
     CCTK_INT moved;
     copy(cctkGH, vars.vi_ptr(), vars.rl_ptr(), vars.tl_ptr(), vars.nvars(),
          &moved);
+
+    for (vector<CCTK_INT>::iterator iter = vars_written.begin();
+        iter != vars_written.end(); ++iter) {
+      int const vi = *iter;
+      assert(vi >= 0);
+      int const gi = CCTK_GroupIndexFromVarI(vi);
+      assert(gi >= 0);
+      int const cactus_tl = CCTK_ActiveTimeLevelsGI(cctkGH, gi);
+      int const num_tl = only_writes_current_timelevel ? 1 : cactus_tl;
+      assert(num_tl <= cactus_tl);
+
+      for (int tl=0; tl<num_tl; ++tl) {
+        // This variable was written by the function which will
+        // execute, therefore it will be valid there and invalid
+        // elsewhere.
+        //std::cout << "DIAG: " << dst_valid << "/" << src_valid << ":" << device->mem(vi, rl, tl)[dst_valid] << "/" << device->mem(vi, rl, tl)[src_valid] << std::endl;
+        device->mem(vi, rl, tl)[dst_valid] = true;
+        //std::cout << "DIAG2: " << dst_valid << "/" << src_valid << ":" << device->mem(vi, rl, tl)[dst_valid] << "/" << device->mem(vi, rl, tl)[src_valid] << std::endl;
+        device->mem(vi, rl, tl)[src_valid] = false;
+      }
+    }
     
     // If the data were moved (instead of copied), mark them as
     // invalid on the source
