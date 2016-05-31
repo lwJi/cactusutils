@@ -4,7 +4,7 @@
 #include <cctk.h>
 #include <cassert>
 #include <vector>
-
+#include <iostream>
 
 
 namespace Accelerator {
@@ -95,22 +95,40 @@ namespace Accelerator {
     device_t(): mems(CCTK_NumVars()) {}
     int ntimelevels(int vi, int rl) const
     {
-      if (rl < int(mems.at(vi).size())) {
+      if (vi < mems.size()) {
+        return 0;
+      } else if (rl < int(mems.at(vi).size())) {
         return mems.at(vi).at(rl).size();
       } else {
         return 0;
       }
     }
+    void ensure_timelevel(int vi, int rl, int tl) {
+      ensure_reflevel(vi, rl);
+      while(mems.at(vi).at(rl).size() <= tl) {
+        int tmptl = mems.at(vi).at(rl).size();
+        mem_t m = {false,false};
+        create_timelevel(vi,rl,tmptl,m);
+      }
+      //if(tl != 0) std::cerr << "tl=" << tl << std::endl;
+      //assert(tl == 0);
+    }
     void create_timelevel(int vi, int rl, int tl, mem_t const& m)
     {
       ensure_reflevel(vi, rl);
+      ensure_timelevel(vi, rl, tl);
       // We can only create the next missing timelevel
+      assert(vi < mems.size());
+      assert(rl < mems.at(vi).size());
       assert(int(mems.at(vi).at(rl).size()) == tl);
       mems.at(vi).at(rl).resize(tl+1, m);
     }
     mem_t& mem(int vi, int rl, int tl)
     {
       ensure_reflevel(vi, rl);
+      assert(vi < mems.size());
+      assert(rl < mems.at(vi).size());
+      assert(tl < mems.at(vi).at(rl).size());
       return mems.at(vi).at(rl).at(tl);
     }
   };
@@ -118,5 +136,7 @@ namespace Accelerator {
   extern device_t *device;
   
 } // namespace Accelerator
+
+extern "C" int Accelerator_query_device(const cGH *,int vi,int tl);
 
 #endif  // #ifndef ACCELERATOR_HH

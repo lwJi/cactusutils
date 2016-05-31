@@ -348,11 +348,14 @@ namespace Accelerator {
             
             if (not (device->mem(vi, rl, tl).*dst_valid)) {
               if (not (device->mem(vi, rl, tl).*src_valid)) {
+                /*
                 CCTK_VWarn(CCTK_WARN_ABORT, __LINE__, __FILE__, CCTK_THORNSTRING,
                            "Variable %s:%d is neither valid on the host nor on the device before function %s::%s",
                            CCTK_FullName(vi), tl,attribute->thorn,attribute->routine);
+                           */
+              } else {
+                vars.push_back(vi, rl, tl);
               }
-              vars.push_back(vi, rl, tl);
               // This will be true after the copy operation below
               device->mem(vi, rl, tl).*dst_valid = true;
             }
@@ -618,9 +621,19 @@ namespace Accelerator {
         assert(v0>=0);
         for (int vi=v0; vi<v0+nv; ++vi) {
           int const tl=0;       // only copy current timelevel
+          int nlevels = device->ntimelevels(vi, rl);
+          if (nlevels <= tl) {
+            // We see this variable for the first time here, and the
+            // caller does not expect valid data. We therefore assume the
+            // variable is invalid everywhere.
+            mem_t const newmem = {false, false};
+            device->create_timelevel(vi, rl, tl, newmem);
+          }
           if (!device->mem(vi, rl, tl).host_valid) {
-            assert(device->mem(vi, rl, tl).device_valid);
-            vars.push_back(vi, rl, tl);
+            // Don't assume the variable is valid
+            // somewhere on presync
+            if(device->mem(vi, rl, tl).device_valid)
+              vars.push_back(vi, rl, tl);
           }
         }
       }
@@ -741,6 +754,7 @@ namespace Accelerator {
       int const vi = variables[var];
       int const rl = rls[var];
       int const tl = tls[var];
+      device->ensure_timelevel(vi,rl,tl);
       device->mem(vi, rl, tl).*valid   = true;
       device->mem(vi, rl, tl).*invalid = false;
     }
@@ -770,6 +784,7 @@ namespace Accelerator {
     
     // Ensure the variable exists on the device or on the host,
     // depending on the language (device or not)
+    // and copy the data to that location if it exists
     
     vars_t unknowns;
     for (int var=0; var<nvariables; ++var) {
@@ -857,8 +872,13 @@ namespace Accelerator {
       }
       
       if (not (device->mem(vi, rl, tl).*dst_valid)) {
-        assert(device->mem(vi, rl, tl).*src_valid);
-        vars.push_back(vi, rl, tl);
+        //assert(device->mem(vi, rl, tl).*src_valid);
+        if(device->mem(vi, rl, tl).*src_valid) {
+          vars.push_back(vi, rl, tl);
+        } else {
+          device->ensure_timelevel(vi,rl,tl);
+          device->mem(vi, rl, tl).*dst_valid = true;
+        }
       }
     }
     
@@ -957,5 +977,13 @@ namespace Accelerator {
     }
     
   }
+
+extern "C" int Accelerator_query_device(const cGH *cctkGH,int vi,int tl) {
+  int const rl = GetRefinementLevel(cctkGH);
+  if(rl < 0) return 0;
+  if(device == 0) return 0;
+  device->ensure_timelevel(vi,rl,tl);
+  return device->mem(vi,rl,tl).device_valid && !device->mem(vi,rl,tl).host_valid;
+}
      
 } // namespace Accelerator
