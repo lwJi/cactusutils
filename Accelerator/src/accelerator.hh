@@ -82,8 +82,9 @@ namespace Accelerator {
   
   class device_t {
     vector<vector<vector<mem_t> > > mems; // [vi][rl][tl]
-    void ensure_reflevel(int vi, int rl)
+    void ensure_reflevel(const int vi, const int rl)
     {
+      assert(rl >= 0);
       if (rl >= int(mems.at(vi).size())) {
         // Allocate space for all refinement levels, so that we don't
         // have to reallocate too often
@@ -95,9 +96,7 @@ namespace Accelerator {
     device_t(): mems(CCTK_NumVars()) {}
     int ntimelevels(int vi, int rl) const
     {
-      if (vi < mems.size()) {
-        return 0;
-      } else if (rl < int(mems.at(vi).size())) {
+      if (rl < int(mems.at(vi).size())) {
         return mems.at(vi).at(rl).size();
       } else {
         return 0;
@@ -116,7 +115,6 @@ namespace Accelerator {
     void create_timelevel(int vi, int rl, int tl, mem_t const& m)
     {
       ensure_reflevel(vi, rl);
-      ensure_timelevel(vi, rl, tl);
       // We can only create the next missing timelevel
       assert(vi < mems.size());
       assert(rl < mems.at(vi).size());
