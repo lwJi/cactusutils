@@ -84,6 +84,9 @@ namespace Accelerator {
     vector<vector<vector<mem_t> > > mems; // [vi][rl][tl]
     void ensure_reflevel(const int vi, const int rl)
     {
+      // rl can be less than zero if this
+      // routine is called at an inappropriate
+      // time in the schedule.
       assert(rl >= 0);
       if (rl >= int(mems.at(vi).size())) {
         // Allocate space for all refinement levels, so that we don't
@@ -104,28 +107,20 @@ namespace Accelerator {
     }
     void ensure_timelevel(int vi, int rl, int tl) {
       ensure_reflevel(vi, rl);
-      while(mems.at(vi).at(rl).size() <= tl) {
-        int tmptl = mems.at(vi).at(rl).size();
-        mem_t m = {false,false};
-        create_timelevel(vi,rl,tmptl,m);
+      if(tl >= int(mems.at(vi).at(rl).size())) {
+        mems.at(vi).at(rl).resize(tl+1);
       }
-      //if(tl != 0) std::cerr << "tl=" << tl << std::endl;
-      //assert(tl == 0);
     }
     void create_timelevel(int vi, int rl, int tl, mem_t const& m)
     {
       ensure_reflevel(vi, rl);
       // We can only create the next missing timelevel
-      assert(vi < mems.size());
-      assert(rl < mems.at(vi).size());
       assert(int(mems.at(vi).at(rl).size()) == tl);
       mems.at(vi).at(rl).resize(tl+1, m);
     }
     mem_t& mem(int vi, int rl, int tl)
     {
       ensure_reflevel(vi, rl);
-      assert(vi < mems.size());
-      assert(rl < mems.at(vi).size());
       assert(tl < mems.at(vi).at(rl).size());
       return mems.at(vi).at(rl).at(tl);
     }
