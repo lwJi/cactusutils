@@ -130,6 +130,4 @@ namespace Accelerator {
   
 } // namespace Accelerator
 
-extern "C" int Accelerator_query_device(const cGH *,int vi,int tl);
-
 #endif  // #ifndef ACCELERATOR_HH

@@ -339,19 +339,6 @@ namespace Accelerator {
               std::cerr << " In function " << attribute->thorn << "::" << attribute->routine << std::endl;
               abort();
             }
-            //assert(tl < device->ntimelevels(vi, rl));
-            if (device->ntimelevels(vi, rl) == tl) {
-              // We see this variable for the first time here, which
-              // means that the function which generated it does not
-              // declare the variable in WRITES (otherwise we would
-              // have seen it in PostCall). This must be a host
-              // function, as all device functions presumably have
-              // valid WRITES lists. Therefore we assume the variable
-              // is valid on the host.
-              mem_t const newmem = {true, false};
-              device->create_timelevel(vi, rl, tl, newmem);
-              unknowns.push_back(vi, rl, tl);
-            }
             
             if (not (device->mem(vi, rl, tl).*dst_valid)) {
               if (not (device->mem(vi, rl, tl).*src_valid)) {
@@ -625,14 +612,9 @@ namespace Accelerator {
         assert(v0>=0);
         for (int vi=v0; vi<v0+nv; ++vi) {
           int const tl=0;       // only copy current timelevel
-          int nlevels = device->ntimelevels(vi, rl);
-          //device->ensure_timelevel(vi,rl,tl);
           if (!device->mem(vi, rl, tl).host_valid) {
-            // Don't assume the variable is valid anywhere
-            if(device->mem(vi, rl, tl).device_valid)
+            assert(device->mem(vi, rl, tl).device_valid);
               vars.push_back(vi, rl, tl);
-            else
-              assert("Failed"==0);
           }
         }
       }
@@ -753,7 +735,6 @@ namespace Accelerator {
       int const vi = variables[var];
       int const rl = rls[var];
       int const tl = tls[var];
-      //device->ensure_timelevel(vi,rl,tl);
       device->mem(vi, rl, tl).*valid   = true;
       device->mem(vi, rl, tl).*invalid = false;
     }
@@ -783,7 +764,6 @@ namespace Accelerator {
     
     // Ensure the variable exists on the device or on the host,
     // depending on the language (device or not)
-    // and copy the data to that location if it exists
     
     vars_t unknowns;
     for (int var=0; var<nvariables; ++var) {
@@ -799,7 +779,7 @@ namespace Accelerator {
           device->mem(vi, rl, tl).host_valid = true;
       }
       assert(tl <= device->ntimelevels(vi, rl));
-      std::cerr << "ENSURE: " << CCTK_VarName(vi) << " rl=" << rl << " tl=" << tl << std::endl;
+      //std::cerr << "ENSURE: " << CCTK_VarName(vi) << " rl=" << rl << " tl=" << tl << std::endl;
       /*
       if (device->ntimelevels(vi, rl) == tl) {
         // We see this variable for the first time here, and the
@@ -992,15 +972,4 @@ namespace Accelerator {
     
   }
 
-/**
- * Determines whether data should not be accessed on the host.
- */
-extern "C" int Accelerator_query_device(const cGH *cctkGH,int vi,int tl) {
-  int const rl = GetRefinementLevel(cctkGH);
-  if(rl < 0) return 0;
-  if(device == 0) return 0;
-  device->ensure_timelevel(vi,rl,tl);
-  return device->mem(vi,rl,tl).device_valid && !device->mem(vi,rl,tl).host_valid;
-}
-     
 } // namespace Accelerator
