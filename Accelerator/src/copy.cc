@@ -46,8 +46,10 @@ namespace Accelerator {
       // Not a group - should be a variable
       const int v = CCTK_VarIndex(name);
       if(v < 0) {
-        std::cerr << "Not a valid grid function name: " << name << std::endl;
-        abort();
+        std::ostringstream msg;
+        msg << "Not a valid grid function name: " << name << std::endl;
+        std::string msg_str = msg.str();
+        CCTK_ERROR(msg_str.c_str());
       }
       vars.push_back(v);
     }
@@ -218,6 +220,8 @@ namespace Accelerator {
     return 0;
   }
   
+
+
   extern "C"
   CCTK_INT
   AcceleratorThorn_PreCallFunction(CCTK_POINTER_TO_CONST const cctkGH_,
@@ -334,10 +338,12 @@ namespace Accelerator {
           for (int tl=0; tl<num_tl; ++tl) {
             
             if(tl >= device->ntimelevels(vi,rl)) {
-              std::cerr << "In Accelerator_PreCallFunction(): ";
-              std::cerr << "Variable = " << CCTK_VarName(vi) << " rl=" << rl << " tl=" << tl;
-              std::cerr << " In function " << attribute->thorn << "::" << attribute->routine << std::endl;
-              abort();
+              std::ostringstream msg;
+              msg << "In Accelerator_PreCallFunction(): ";
+              msg << "Variable = " << CCTK_VarName(vi) << " rl=" << rl << " tl=" << tl;
+              msg << " In function " << attribute->thorn << "::" << attribute->routine << std::endl;
+              std::string msg_str = msg.str();
+              CCTK_ERROR(msg_str.c_str());
             }
             
             if (not (device->mem(vi, rl, tl).*dst_valid)) {
@@ -771,7 +777,13 @@ namespace Accelerator {
       int const rl = rls[var];
       int const tl = tls[var];
       
+      // RequireInvalidData may be called before a write,
+      // it is thus a good place to ensure timelevels.
       device->ensure_timelevel(vi,rl,tl);
+      // If the data is not valid anywehere, mark it as
+      // valid at the requested location. This makes it
+      // possible to call RequireValidData, and that the
+      // call to RequireValidData does not copy the data.
       if(!device->mem(vi, rl, tl).host_valid && !device->mem(vi, rl, tl).device_valid) {
         if(on_device)
           device->mem(vi, rl, tl).device_valid = true;
@@ -779,8 +791,6 @@ namespace Accelerator {
           device->mem(vi, rl, tl).host_valid = true;
       }
       assert(tl <= device->ntimelevels(vi, rl));
-      //std::cerr << "ENSURE: " << CCTK_VarName(vi) << " rl=" << rl << " tl=" << tl << std::endl;
-      /*
       if (device->ntimelevels(vi, rl) == tl) {
         // We see this variable for the first time here, and the
         // caller does not expect valid data. We therefore assume the
@@ -789,14 +799,11 @@ namespace Accelerator {
         device->create_timelevel(vi, rl, tl, newmem);
         unknowns.push_back(vi, rl, tl);
       }
-      */
     }
     
-    /*
     Device_CreateVariables
       (cctkGH, unknowns.vi_ptr(), unknowns.rl_ptr(), unknowns.tl_ptr(),
        unknowns.nvars());
-       */
     
     return 0;
   }
@@ -867,11 +874,12 @@ namespace Accelerator {
           vars.push_back(vi, rl, tl);
         } else {
           device->mem(vi, rl, tl).*dst_valid = true;
-          std::cerr << "In Accelerator_RequireValidData(): No destination is valid ";
-          std::cerr << "Variable = " << CCTK_VarName(vi) << " rl=" << rl << " tl=" << tl;
-          //std::cerr << "In function " << attribute->thorn << "::" << attribute->routine;
-          std::cerr << std::endl;
-          assert(false);
+          std::ostringstream msg;
+          msg << "In Accelerator_RequireValidData(): No destination is valid ";
+          msg << "Variable = " << CCTK_VarName(vi) << " rl=" << rl << " tl=" << tl;
+          msg << std::endl;
+          std::string msg_str = msg.str();
+          CCTK_ERROR(msg_str.c_str());
         }
       }
     }

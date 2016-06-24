@@ -4,7 +4,6 @@
 #include <cctk.h>
 #include <cassert>
 #include <vector>
-#include <iostream>
 
 
 namespace Accelerator {
@@ -121,7 +120,7 @@ namespace Accelerator {
     mem_t& mem(int vi, int rl, int tl)
     {
       ensure_reflevel(vi, rl);
-      assert(tl < mems.at(vi).at(rl).size());
+      assert(tl < int(mems.at(vi).at(rl).size()));
       return mems.at(vi).at(rl).at(tl);
     }
   };
