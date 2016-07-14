@@ -1,15 +1,15 @@
 #include "cctk.h"
-#include "cctk_WarnLevel.h"
 #include "cctk_Arguments.h"
 #include "cctk_Parameters.h"
+#include "cctk_WarnLevel.h"
 
 /* manpage of getpriority:
    Including  <sys/time.h>  is  not  required  these days,
    but increases portability.
 */
-#include <sys/time.h>
 #include <errno.h>
 #include <sys/resource.h>
+#include <sys/time.h>
 
 int Nice_Renice(void);
 int Nice_Renice(void) {
