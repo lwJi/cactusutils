@@ -9,19 +9,19 @@
    @version   $Id$
  @@*/
 
+#include <cassert>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <cassert>
 #include <sstream>
 
 #include "cctk.h"
-#include "cctk_WarnLevel.h"
 #include "cctk_Arguments.h"
+#include "cctk_FortranString.h"
 #include "cctk_Parameters.h"
 #include "cctk_Termination.h"
-#include "cctk_FortranString.h"
+#include "cctk_WarnLevel.h"
 
 #include "util_String.h"
 
@@ -391,10 +391,8 @@ extern "C" int NaNChecker_CheckVarsForNaN(const cGH *GH, int report_max,
   return (info.count);
 }
 
-extern "C" void CCTK_FCALL
-    CCTK_FNAME(NaNChecker_CheckVarsForNaN)(int *ierror, const cGH **GH,
-                                           const int *report_max,
-                                           THREE_FORTSTRING_ARG) {
+extern "C" void CCTK_FCALL CCTK_FNAME(NaNChecker_CheckVarsForNaN)(
+    int *ierror, const cGH **GH, const int *report_max, THREE_FORTSTRING_ARG) {
   THREE_FORTSTRING_CREATE(vars, check_for, action_if_found);
   *ierror =
       NaNChecker_CheckVarsForNaN(*GH, *report_max, vars, check_for,
@@ -452,9 +450,9 @@ extern "C" int NaNChecker_SetVarsToNaN(const cGH *GH, const char *vars) {
   return (info.count);
 }
 
-extern "C" void CCTK_FCALL
-    CCTK_FNAME(NaNChecker_SetVarsToNaN)(int *ierror, const cGH **GH,
-                                        ONE_FORTSTRING_ARG) {
+extern "C" void
+    CCTK_FCALL CCTK_FNAME(NaNChecker_SetVarsToNaN)(int *ierror, const cGH **GH,
+                                                   ONE_FORTSTRING_ARG) {
   ONE_FORTSTRING_CREATE(vars);
   *ierror = NaNChecker_SetVarsToNaN(*GH, vars);
   free(vars);
