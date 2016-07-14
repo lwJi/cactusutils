@@ -8,8 +8,8 @@
 #include <iomanip>
 #include <iostream>
 #include <limits>
-#include <string>
 #include <sstream>
+#include <string>
 
 #include <unistd.h>
 
@@ -76,7 +76,8 @@ portal::~portal() {
   databuf << "POST HTTP/1.0 200\r\n"
           << "Content-Type: text/xml\r\n"
           << "Content-Length: " << msgstr.length() << "\r\n"
-          << "\r\n" << msgstr << "\r\n"
+          << "\r\n"
+          << msgstr << "\r\n"
           << "\r\n";
   string const datastr = databuf.str();
 

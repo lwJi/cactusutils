@@ -9,8 +9,8 @@
 #include <iostream>
 #include <limits>
 #include <list>
-#include <string>
 #include <sstream>
+#include <string>
 
 #include <signal.h>
 #include <sys/wait.h>
@@ -331,14 +331,17 @@ static string AppendToTransaction(const string operation, const string &subject,
                                   const string &object) {
   ostringstream buf;
   buf << "<" << operation << ">\n"
-                             "  <uri>&simID;" << subject << "</uri>\n"
-                                                            "  <uri>&cctk;"
+                             "  <uri>&simID;"
+      << subject << "</uri>\n"
+                    "  <uri>&cctk;"
       << predicate << "</uri>\n"
-                      "  " << object << "\n"
-                                        "  <contexts>\n"
-                                        "    <uri>&context;</uri>\n"
-                                        "  </contexts>\n"
-                                        "</" << operation << ">\n\n";
+                      "  "
+      << object << "\n"
+                   "  <contexts>\n"
+                   "    <uri>&context;</uri>\n"
+                   "  </contexts>\n"
+                   "</"
+      << operation << ">\n\n";
   return buf.str();
 }
 
@@ -451,8 +454,8 @@ rdf::~rdf() {
   DECLARE_CCTK_PARAMETERS;
 
   if (parent) {
-    parent->msgbuf << "<cctk:" << groupname << ">\n" << msgbuf.str()
-                   << "</cctk:" << groupname << ">\n";
+    parent->msgbuf << "<cctk:" << groupname << ">\n"
+                   << msgbuf.str() << "</cctk:" << groupname << ">\n";
     return;
   }
 
@@ -513,7 +516,8 @@ rdf::~rdf() {
       ostringstream databuf;
       databuf << (get_state() == initial ? "PUT" : "POST")
               << " /openrdf-sesame/repositories/Simulations/statements"
-                 "?context=" << contextURI << "&baseURI=" << contextURI;
+                 "?context="
+              << contextURI << "&baseURI=" << contextURI;
       //<< " /context/CactusSimulations/" << jobID;
       // set a metadata lifetime if requested by the user
       // (Formaline::time_to_live is hours but the RDF service wants seconds)
@@ -524,8 +528,8 @@ rdf::~rdf() {
               << "Content-Type: application/"
               << (get_state() == initial ? "rdf+xml" : "x-rdftransaction")
               << "\r\n"
-              << "Content-Length: " << len << "\r\n\r\n" << header
-              << msgbuf.str() << footer << "\r\n\r\n";
+              << "Content-Length: " << len << "\r\n\r\n"
+              << header << msgbuf.str() << footer << "\r\n\r\n";
 
       // Send the data
       SendData(rdf_hostname[i], rdf_port[i], databuf.str());

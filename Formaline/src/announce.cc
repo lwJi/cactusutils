@@ -666,8 +666,7 @@ void args::output_variable(int const varindex,
         stores.store(keyim, CCTK_CmplxImag(val));
       }
     } break;
-    default:
-      ;
+    default:;
       // not supported yet
       // TODO: output warning
     }
