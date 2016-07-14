@@ -615,10 +615,11 @@ int CollectTimerInfo(const cGH *restrict cctkGH, timer_stats &timers) {
     sort_index[i] = i;
   sort(sort_index.begin(), sort_index.end(),
        [&](int ia, int ib) { return all_timernames[ia] < all_timernames[ib]; });
-  sort_index.erase(
-      unique(sort_index.begin(), sort_index.end(), [&](int ia, int ib) {
-        return all_timernames[ia] == all_timernames[ib];
-      }), sort_index.end());
+  sort_index.erase(unique(sort_index.begin(), sort_index.end(),
+                          [&](int ia, int ib) {
+                            return all_timernames[ia] == all_timernames[ib];
+                          }),
+                   sort_index.end());
   int unique_timers = sort_index.size();
 
   // Allocate timer data structure
