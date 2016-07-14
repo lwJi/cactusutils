@@ -1,14 +1,13 @@
-
-#include <stdio.h> 
-#include <string.h> 
+#include <assert.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <sys/resource.h>
 #include <unistd.h>
-#include <stdlib.h>
-#include "assert.h"
 
-#include "cctk.h" 
-#include "cctk_Arguments.h" 
-#include "cctk_Parameters.h" 
+#include <cctk.h>
+#include <cctk_Arguments.h>
+#include <cctk_Parameters.h>
 
 #ifdef HAVE_MALLOC_H
 #include <malloc.h>
@@ -17,8 +16,8 @@
 // There doesn't seem to be a Cactus macro defined for the Mach header
 // files we actually need, so use the mach_time.h macro instead
 #ifdef HAVE_MACH_MACH_TIME_H
-#include <mach/task.h>
 #include <mach/mach_init.h>
+#include <mach/task.h>
 #endif
 
 #ifndef HAVE_MALLINFO
@@ -37,8 +36,7 @@ struct mallinfo_t {
   int keepcost;
 };
 
-struct mallinfo_t mallinfo()
-{
+struct mallinfo_t mallinfo() {
   struct mallinfo_t m;
   m.arena = 0;
   m.ordblks = 0;
@@ -57,35 +55,33 @@ struct mallinfo_t mallinfo()
 
 #ifndef _MACH_INIT_
 
-static unsigned long int get_rss()
-{
-  unsigned int size=0; //       total program size
-  unsigned int resident=0;//   resident set size
-  unsigned int share=0;//      shared pages
-  unsigned int text=0;//       text (code)
-  unsigned int lib=0;//        library
-  unsigned int data=0;//       data/stack
+static unsigned long int get_rss() {
+  unsigned int size = 0;     //       total program size
+  unsigned int resident = 0; //   resident set size
+  unsigned int share = 0;    //      shared pages
+  unsigned int text = 0;     //       text (code)
+  unsigned int lib = 0;      //        library
+  unsigned int data = 0;     //       data/stack
 
   int page_size = sysconf(_SC_PAGESIZE);
 
   char buf[30];
   snprintf(buf, 30, "/proc/%u/statm", (unsigned)getpid());
-  FILE* pf = fopen(buf, "r");
+  FILE *pf = fopen(buf, "r");
   // If the /proc filesystem does not exist, this file will not be
   // found and the function will return 0
-  if (pf) 
-  {
-    if (fscanf(pf, "%u %u %u %u %u %u",
-               &size, &resident, &share, &text, &lib, &data) != 6)
-    {
-      CCTK_WARN(1, "Error while reading memory statistics (rss); results will be invalid");
+  if (pf) {
+    if (fscanf(pf, "%u %u %u %u %u %u", &size, &resident, &share, &text, &lib,
+               &data) != 6) {
+      CCTK_WARN(1, "Error while reading memory statistics (rss); results will "
+                   "be invalid");
       fclose(pf);
       return 0;
     }
-    
+
     fclose(pf);
   }
-  return (unsigned long int ) resident * (unsigned long int) page_size;
+  return (unsigned long int)resident * (unsigned long int)page_size;
 }
 
 #else
@@ -93,27 +89,25 @@ static unsigned long int get_rss()
 // The code to get the RSS from Mac OS has been modified from
 //   http://miknight.blogspot.com/2005/11/resident-set-size-in-mac-os-x.html
 
-static unsigned long int get_rss()
-{
-    struct task_basic_info t_info;
-    mach_msg_type_number_t t_info_count = TASK_BASIC_INFO_COUNT;
+static unsigned long int get_rss() {
+  struct task_basic_info t_info;
+  mach_msg_type_number_t t_info_count = TASK_BASIC_INFO_COUNT;
 
-    task_t task = MACH_PORT_NULL;
+  task_t task = MACH_PORT_NULL;
 
-    if (task_for_pid(current_task(), getpid(), &task) != KERN_SUCCESS)
-        abort();
+  if (task_for_pid(current_task(), getpid(), &task) != KERN_SUCCESS)
+    abort();
 
-    task_info(task, TASK_BASIC_INFO, (task_info_t)&t_info, &t_info_count);
-    return t_info.resident_size;
+  task_info(task, TASK_BASIC_INFO, (task_info_t)&t_info, &t_info_count);
+  return t_info.resident_size;
 }
 
 #endif
 
-static unsigned int get_majflt()
-{
+static unsigned int get_majflt() {
   int pid;
   char exe[256];
-  char  state;
+  char state;
   int dummyi;
   unsigned long int dummyu;
   unsigned long int majflt;
@@ -122,16 +116,15 @@ static unsigned int get_majflt()
 
   char buf[30];
   snprintf(buf, 30, "/proc/%u/stat", (unsigned)getpid());
-  FILE* pf = fopen(buf, "r");
+  FILE *pf = fopen(buf, "r");
   // If the /proc filesystem does not exist, this file will not be
   // found and the function will return 0
-  if (pf) 
-  {
-    if (fscanf(pf, "%d %s %c %d %d %d %d %d %lu %lu %lu %lu", 
-           &pid, exe, &state, &dummyi,  &dummyi, &dummyi, &dummyi, 
-               &dummyi, &dummyu, &dummyu, &dummyu, &majflt) != 12)
-    {
-      CCTK_WARN(1, "Error while reading memory statistics (majflt); results will be invalid");
+  if (pf) {
+    if (fscanf(pf, "%d %s %c %d %d %d %d %d %lu %lu %lu %lu", &pid, exe, &state,
+               &dummyi, &dummyi, &dummyi, &dummyi, &dummyi, &dummyu, &dummyu,
+               &dummyu, &majflt) != 12) {
+      CCTK_WARN(1, "Error while reading memory statistics (majflt); results "
+                   "will be invalid");
       fclose(pf);
       return 0;
     }
@@ -141,8 +134,7 @@ static unsigned int get_majflt()
   return majflt * page_size;
 }
 
-static long long int get_swap_kB()
-{
+static long long int get_swap_kB() {
   FILE *f = fopen("/proc/meminfo", "r");
   if (f == 0)
     return -1;
@@ -153,42 +145,37 @@ static long long int get_swap_kB()
   bool read_swap_total = false;
   bool read_swap_free = false;
 
-  while(!feof(f) && fgets(buffer, buf_len, f) != NULL)
-  {
+  while (!feof(f) && fgets(buffer, buf_len, f) != NULL) {
     char key[100];
     char unit[100];
     long long int val = -1;
     sscanf(buffer, "%s %lld %s", key, &val, unit);
-    if (strcmp(key, "SwapTotal:") == 0)
-    {
+    if (strcmp(key, "SwapTotal:") == 0) {
       assert(strcmp(unit, "kB") == 0);
       swap_total = val;
       read_swap_total = true;
-    }
-    else if (strcmp(key, "SwapFree:") == 0)
-    {
+    } else if (strcmp(key, "SwapFree:") == 0) {
       assert(strcmp(unit, "kB") == 0);
       swap_free = val;
       read_swap_free = true;
     }
   }
 
-  if (!read_swap_total || !read_swap_free)
-  {
+  if (!read_swap_total || !read_swap_free) {
     CCTK_WARN(1, "Unable to read swap usage from /proc/meminfo");
-    swap_total = 0; swap_free = 0;
+    swap_total = 0;
+    swap_free = 0;
   }
 
   fclose(f);
   return swap_total - swap_free;
 }
 
-extern "C" void SystemStatistics_Collect(CCTK_ARGUMENTS)
-{
+extern "C" void SystemStatistics_Collect(CCTK_ARGUMENTS) {
   DECLARE_CCTK_ARGUMENTS
   DECLARE_CCTK_PARAMETERS
 
-  const int mb = 1024*1024;
+  const int mb = 1024 * 1024;
   const int kb = 1024;
 
   *maxrss = get_rss();
@@ -223,5 +210,4 @@ extern "C" void SystemStatistics_Collect(CCTK_ARGUMENTS)
   *fordblks_kb = *fordblks / kb;
   *keepcost_kb = *keepcost / kb;
   *swap_used_kb = *swap_used / kb;
-
 }
