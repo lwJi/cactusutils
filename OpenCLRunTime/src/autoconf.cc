@@ -6,8 +6,8 @@
 #include <fstream>
 #include <string>
 
-extern "C" char const *const
-    OpenCL_source_OpenCLRunTime_test_attribute_opencl_unroll_hint;
+extern "C" char const
+    *const OpenCL_source_OpenCLRunTime_test_attribute_opencl_unroll_hint;
 extern "C" char const *const OpenCL_source_OpenCLRunTime_test_attribute_unused;
 extern "C" char const *const OpenCL_source_OpenCLRunTime_test_builtin_expect;
 extern "C" char const *const OpenCL_source_OpenCLRunTime_test_opencl;

@@ -1,5 +1,5 @@
-#include "defs.hh"
 #include "kernel.hh"
+#include "defs.hh"
 
 #include <cctk.h>
 #include <cctk_Parameters.h>
@@ -102,7 +102,8 @@ void OpenCLKernel::disassemble() const {
     filename << out_dir << "/" << name << ".log";
     fstream file(filename.str().c_str(), ios::out | ios::app);
     file << "\n"
-         << "Disassembling:\n" << cc.str() << "\n";
+         << "Disassembling:\n"
+         << cc.str() << "\n";
     file.close();
     system(cc.str().c_str());
     break;

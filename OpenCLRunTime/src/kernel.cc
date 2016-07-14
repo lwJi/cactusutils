@@ -159,13 +159,14 @@ OpenCLKernel::OpenCLKernel(cGH const *const cctkGH, char const *const thorn,
         << paramdecls.str()
 #endif
       << paramdefs.str() << "\n"
-      << "// Kranc's FD operators:\n" << sources[0] << "\n"
+      << "// Kranc's FD operators:\n"
+      << sources[0] << "\n"
       << "// Kernel Function:\n"
       << "__kernel\n"
       << "__attribute__((vec_type_hint(CCTK_REAL_VEC)))\n"
       << ("__attribute__((reqd_work_group_size"
-          "(GROUP_SIZE_I, GROUP_SIZE_J, GROUP_SIZE_K)))\n") << "void " << name
-      << "\n"
+          "(GROUP_SIZE_I, GROUP_SIZE_J, GROUP_SIZE_K)))\n")
+      << "void " << name << "\n"
       << " (cGH __constant *restrict const cctkGH";
 #if 0
         << " (cGH __constant *restrict const cctkGH,\n";
@@ -182,7 +183,8 @@ OpenCLKernel::OpenCLKernel(cGH const *const cctkGH, char const *const thorn,
       << "  DECLARE_CCTK_ARGUMENTS;\n"
       << "  DECLARE_CCTK_PARAMETERS;\n"
       << "\n"
-      << "// BEGIN USER-DEFINED KERNEL\n" << sources[1] // user's kernel code
+      << "// BEGIN USER-DEFINED KERNEL\n"
+      << sources[1] // user's kernel code
       << "// END USER-DEFINED KERNEL\n"
       << "}\n";
   string const sbuf = buf.str();
@@ -632,8 +634,8 @@ void OpenCLRunTime_CallKernel(cGH const *const cctkGH, char const *const thorn,
     *pkernel = new OpenCLKernel(cctkGH, thorn, name, sources, groups,
                                 varindices, timelevels, aliases, nvars);
   } else {
-    (*pkernel)
-        ->setup_args(cctkGH, groups, varindices, timelevels, aliases, nvars);
+    (*pkernel)->setup_args(cctkGH, groups, varindices, timelevels, aliases,
+                           nvars);
   }
 
   if (veryverbose) {

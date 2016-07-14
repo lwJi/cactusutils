@@ -1,5 +1,5 @@
-#include "defs.hh"
 #include "device.hh"
+#include "defs.hh"
 
 #include <cctk.h>
 #include <cctk_Arguments.h>
