@@ -8,8 +8,8 @@
 #include <cstring>
 #include <list>
 #include <map>
-#include <string>
 #include <sstream>
+#include <string>
 #include <vector>
 
 #ifdef HAVE_CAPABILITY_MPI
