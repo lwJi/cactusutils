@@ -253,7 +253,7 @@ int MPI_Type_commit(MPI_Datatype *const datatype) {
 int MPI_Type_contiguous(int const cnt, MPI_Datatype const oldtype,
                         MPI_Datatype *const newtype) {
   assert(oldtype > 0);
-  *newtype = cnt *oldtype;
+  *newtype = cnt * oldtype;
   return 0;
 }
 
