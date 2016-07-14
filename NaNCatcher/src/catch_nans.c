@@ -50,8 +50,8 @@ int no_catch_nans(void) {
   return 0;
 }
 
-#elif(defined __linux__ && (defined __i386__ || defined __x86_64__) &&         \
-      (defined __GNUC__ || defined __INTEL_COMPILER))
+#elif (defined __linux__ && (defined __i386__ || defined __x86_64__) &&        \
+       (defined __GNUC__ || defined __INTEL_COMPILER))
 
 /*
  * Here's an x86-only fallback for non-glibc systems that use the GNU
