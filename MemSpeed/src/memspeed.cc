@@ -1457,23 +1457,38 @@ void measure_mpi_latency(const MPI_Comm comm) {
   fflush(stdout);
   int rank;
   MPI_Comm_rank(comm, &rank);
+  const size_t nmax = 1000; // 1000 times
   double elapsed;
   if (rank == 0) {
     char cval;
+    // Warm up
+    MPI_Recv(&cval, 1, MPI_CHAR, 1, 0, comm, MPI_STATUS_IGNORE);
+    MPI_Send(&cval, 1, MPI_CHAR, 1, 0, comm);
+    // Wait until ready
     MPI_Recv(&cval, 1, MPI_CHAR, 1, 0, comm, MPI_STATUS_IGNORE);
     const double t0 = omp_get_wtime();
-    MPI_Send(&cval, 1, MPI_CHAR, 1, 0, comm);
-    MPI_Recv(&cval, 1, MPI_CHAR, 1, 0, comm, MPI_STATUS_IGNORE);
+    // Ping pong
+    for (size_t n = 0; n < nmax; ++n) {
+      MPI_Send(&cval, 1, MPI_CHAR, 1, 0, comm);
+      MPI_Recv(&cval, 1, MPI_CHAR, 1, 0, comm, MPI_STATUS_IGNORE);
+    }
     const double t1 = omp_get_wtime();
     elapsed = t1 - t0;
   } else if (rank == 1) {
     char cval = 0;
+    // Warm up
     MPI_Send(&cval, 1, MPI_CHAR, 0, 0, comm);
     MPI_Recv(&cval, 1, MPI_CHAR, 0, 0, comm, MPI_STATUS_IGNORE);
+    // Send ready signal
     MPI_Send(&cval, 1, MPI_CHAR, 0, 0, comm);
+    // Ping pong
+    for (size_t n = 0; n < nmax; ++n) {
+      MPI_Recv(&cval, 1, MPI_CHAR, 0, 0, comm, MPI_STATUS_IGNORE);
+      MPI_Send(&cval, 1, MPI_CHAR, 0, 0, comm);
+    }
   }
   MPI_Bcast(&elapsed, 1, MPI_DOUBLE, 0, comm);
-  mpi_info.latency = elapsed / 2;
+  mpi_info.latency = elapsed / 2 / nmax;
   printf(" %g nsec\n", mpi_info.latency * 1.0e+9);
 }
 
@@ -1482,16 +1497,26 @@ void measure_mpi_bandwidth(const MPI_Comm comm) {
   fflush(stdout);
   int rank;
   MPI_Comm_rank(comm, &rank);
-  double elapsed;
   const size_t nmax = 10 * 1000 * 1000; // 10 MByte
+  double elapsed;
   if (rank == 0) {
     vector<char> array1(nmax, 1);
     vector<char> array2(nmax, 2);
+    // Warm up:
     // Pre-post receive
     MPI_Request req;
     MPI_Irecv(&array2[0], nmax, MPI_CHAR, 1, 0, comm, &req);
     // Wait for other process to be ready
     char cval;
+    MPI_Recv(&cval, 1, MPI_CHAR, 1, 1, comm, MPI_STATUS_IGNORE);
+    // Send data
+    MPI_Send(&array1[0], nmax, MPI_CHAR, 1, 0, comm);
+    // Receive data
+    MPI_Wait(&req, MPI_STATUS_IGNORE);
+    // Measure:
+    // Pre-post receive
+    MPI_Irecv(&array2[0], nmax, MPI_CHAR, 1, 0, comm, &req);
+    // Wait for other process to be ready
     MPI_Recv(&cval, 1, MPI_CHAR, 1, 1, comm, MPI_STATUS_IGNORE);
     const double t0 = omp_get_wtime();
     // Send data
@@ -1503,11 +1528,21 @@ void measure_mpi_bandwidth(const MPI_Comm comm) {
   } else if (rank == 1) {
     vector<char> array1(nmax, 3);
     vector<char> array2(nmax, 4);
+    // Warm up:
     // Pre-post receive
     MPI_Request req;
     MPI_Irecv(&array1[0], nmax, MPI_CHAR, 0, 0, comm, &req);
     // Tell other process we are ready
     char cval = 0;
+    MPI_Send(&cval, 1, MPI_CHAR, 0, 1, comm);
+    // Receive data
+    MPI_Wait(&req, MPI_STATUS_IGNORE);
+    // Send data
+    MPI_Send(&array2[0], nmax, MPI_CHAR, 0, 0, comm);
+    // Measure:
+    // Pre-post receive
+    MPI_Irecv(&array1[0], nmax, MPI_CHAR, 0, 0, comm, &req);
+    // Tell other process we are ready
     MPI_Send(&cval, 1, MPI_CHAR, 0, 1, comm);
     // Receive data
     MPI_Wait(&req, MPI_STATUS_IGNORE);
