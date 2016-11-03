@@ -664,37 +664,67 @@ void measure_read_latency(const MPI_Comm comm, const int proc_num_threads) {
     vector<char> skiparray(skip_memsize, 1);
 
     // Allocate benchmark data structures
+#if 0
     const ptrdiff_t offset = 0xa1d2d5ff; // a random number
+#endif
     const ptrdiff_t nmax = cache_memsize / sizeof(void *);
     // Linked list (see latex)
     vector<vector<void *> > arrays(proc_num_allocs);
-#pragma omp parallel num_threads(proc_num_threads)
-    if (omp_get_thread_num() % thread_alloc_every == 0) {
-      const int alloc = omp_get_thread_num() / thread_alloc_every;
-      assert(alloc < proc_num_allocs);
-      arrays[alloc].resize(nmax);
-      void **const array = &arrays[alloc][0];
-      ptrdiff_t i = 0;
-      for (ptrdiff_t n = 0; n < nmax; ++n) {
-        if (n > 0)
-          assert(i != 0);
-        ptrdiff_t next_i = ((i + offset) % nmax + nmax) % nmax;
-        if (array[i] && n != nmax - 1)
-          ++next_i;
-        assert(!array[i]);
-        array[i] = &array[next_i];
-        i = next_i;
+    {
+      if (verbose) {
+        printf("      [allocating arrays...");
+        fflush(stdout);
       }
-      assert(i == 0);
-    }
-    for (int alloc = 0; alloc < proc_num_allocs; ++alloc) {
-      assert(!arrays[alloc].empty());
+      const double t0 = omp_get_wtime();
+#pragma omp parallel num_threads(proc_num_threads)
+      if (omp_get_thread_num() % thread_alloc_every == 0) {
+        const int alloc = omp_get_thread_num() / thread_alloc_every;
+        assert(alloc < proc_num_allocs);
+        arrays[alloc].resize(nmax);
+        void **const array = &arrays[alloc][0];
+#if 0
+        // Note: This loop can take a very long time
+        ptrdiff_t i = 0;
+        for (ptrdiff_t n = 0; n < nmax; ++n) {
+          if (n > 0)
+            assert(i != 0);
+          ptrdiff_t next_i = ((i + offset) % nmax + nmax) % nmax;
+          if (array[i] && n != nmax - 1)
+            ++next_i;
+          assert(!array[i]);
+          array[i] = &array[next_i];
+          i = next_i;
+        }
+        assert(i == 0);
+#else
+        const ptrdiff_t delta_n = 1024; // must be larger than cache line size
+        for (ptrdiff_t n = 0; n < nmax; ++n) {
+          ptrdiff_t next_n = n + delta_n;
+          if (next_n >= nmax) {
+            next_n = next_n % nmax + 1;
+            if (next_n >= delta_n)
+              next_n = 0;
+          }
+          array[n] = &array[next_n];
+        }
+        assert(nmax > 0 && array[nmax - 1] == &array[0]);
+#endif
+      }
+      for (int alloc = 0; alloc < proc_num_allocs; ++alloc) {
+        assert(!arrays[alloc].empty());
+      }
+      const double t1 = omp_get_wtime();
+      const double elapsed = t1 - t0;
+      if (verbose) {
+        printf(" %g sec]\n", elapsed);
+        fflush(stdout);
+      }
     }
 
     // The basic benchmark harness is the same as above, no comments
     // here
     double min_elapsed = 1.0;
-    ptrdiff_t max_count = 1000;
+    ptrdiff_t max_count = 1;
     double elapsed;
     for (;;) {
       if (verbose) {
@@ -982,7 +1012,7 @@ void measure_write_latency(const MPI_Comm comm, const int proc_num_threads) {
     // The basic benchmark harness is the same as above, no comments
     // here
     double min_elapsed = 1.0;
-    ptrdiff_t max_count = 1000;
+    ptrdiff_t max_count = 1;
     double elapsed;
     for (;;) {
       if (verbose) {
