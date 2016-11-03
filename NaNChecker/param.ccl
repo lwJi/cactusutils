@@ -56,7 +56,7 @@ BOOLEAN ignore_restricted_points "do not check grid points whose values will be 
 {
 } "no"
 
-STRING  restriction_mask "grid function to use to decide which points are restricted away, points where the mask is zero are ignored" STEERABLE = ALWAYS
+STRING restriction_mask "grid function to use to decide which points are restricted away, points where the mask is zero are ignored" STEERABLE = ALWAYS
 {
   "CarpetReduce[:][:]weight" :: "Carpet's reduction mask"
   "CarpetEvolutionMask[:][:]evolution_mask" :: "takes prolongation stencil into account"
