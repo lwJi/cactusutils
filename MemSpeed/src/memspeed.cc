@@ -1550,8 +1550,8 @@ void measure_mpi_bandwidth(const MPI_Comm comm) {
     MPI_Send(&array2[0], nmax, MPI_CHAR, 0, 0, comm);
   }
   MPI_Bcast(&elapsed, 1, MPI_DOUBLE, 0, comm);
-  mpi_info.latency = nmax / (elapsed / 2);
-  printf(" %g GByte/sec\n", mpi_info.latency / 1.0e+9);
+  mpi_info.bandwidth = nmax / (elapsed / 2);
+  printf(" %g GByte/sec\n", mpi_info.bandwidth / 1.0e+9);
 }
 
 #endif
