@@ -183,9 +183,7 @@ int Trigger_TriggerFullFilled(const cGH *GH, int trigger) {
       (CCTK_EQUALS(my_GH->relation[trigger], "!=") &&
        (value != my_GH->checked_value[trigger])))
     ret = 1;
-  if (ret)
-<<<<<<< 738657b4750b51ac260abd820c35195f908e063f
-  {
+  if (ret) {
     if (my_GH->debug) {
       if (varindex >= 0)
         CCTK_VInfo(CCTK_THORNSTRING,
@@ -198,36 +196,20 @@ int Trigger_TriggerFullFilled(const cGH *GH, int trigger) {
                    my_GH->checked_parameter_name[trigger],
                    my_GH->checked_parameter_thorn[trigger], value,
                    my_GH->relation[trigger], my_GH->checked_value[trigger]);
-    }
-  } else {
-    if (my_GH->debug) {
-      if (varindex >= 0)
-=======
-    if (my_GH->debug) {
-      if (varindex >= 0)
-        CCTK_VInfo(CCTK_THORNSTRING,
-                   "trigger nr. %d fullfilled for %s (%f%s%f)", trigger,
-                   CCTK_VarName(varindex), value, my_GH->relation[trigger],
-                   my_GH->checked_value[trigger]);
-      else
-        CCTK_VInfo(CCTK_THORNSTRING,
-                   "trigger nr. %d fullfilled for %s::%s (%f%s%f)", trigger,
-                   my_GH->checked_parameter_name[trigger],
-                   my_GH->checked_parameter_thorn[trigger], value,
-                   my_GH->relation[trigger], my_GH->checked_value[trigger]);
-    } else if (my_GH->debug) {
-      if (varindex >= 0)
->>>>>>> Trigger: Apply clang-format
-        CCTK_VInfo(CCTK_THORNSTRING,
-                   "trigger nr. %d not fullfilled for %s (%f%s%f)", trigger,
-                   CCTK_VarName(varindex), value, my_GH->relation[trigger],
-                   my_GH->checked_value[trigger]);
-      else
-        CCTK_VInfo(CCTK_THORNSTRING,
-                   "trigger nr. %d not fullfilled for %s::%s (%f%s%f)", trigger,
-                   my_GH->checked_parameter_name[trigger],
-                   my_GH->checked_parameter_thorn[trigger], value,
-                   my_GH->relation[trigger], my_GH->checked_value[trigger]);
+    } else {
+      if (my_GH->debug) {
+        if (varindex >= 0)
+          CCTK_VInfo(CCTK_THORNSTRING,
+                     "trigger nr. %d not fullfilled for %s (%f%s%f)", trigger,
+                     CCTK_VarName(varindex), value, my_GH->relation[trigger],
+                     my_GH->checked_value[trigger]);
+        else
+          CCTK_VInfo(CCTK_THORNSTRING,
+                     "trigger nr. %d not fullfilled for %s::%s (%f%s%f)",
+                     trigger, my_GH->checked_parameter_name[trigger],
+                     my_GH->checked_parameter_thorn[trigger], value,
+                     my_GH->relation[trigger], my_GH->checked_value[trigger]);
+      }
     }
   }
   return ret;
