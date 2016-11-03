@@ -505,8 +505,8 @@ void PrintTopTimers(CCTK_ARGUMENTS) {
   printf("%s\n", sep.c_str());
 }
 
-// Note: Timer names are truncated to 100 characters for simplicity
-const int TIMERNAME_LENGTH = 101; // this includes the terminating NUL character
+// Note: Timer names are truncated for simplicity
+const int TIMERNAME_LENGTH = 201; // this includes the terminating NUL character
 typedef array<char, TIMERNAME_LENGTH> timername_t;
 
 // Collect timer information onto the root processor
