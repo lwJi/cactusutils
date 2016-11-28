@@ -262,9 +262,9 @@ extern "C" void Formaline_AnnounceInitial(CCTK_ARGUMENTS) {
     }
 
     {
-      char parameter_filename[10000];
-      CCTK_ParameterFilename(sizeof parameter_filename, parameter_filename);
-      stores.store("parameter_filename", parameter_filename);
+      vector<char> parameter_filename(10000);
+      CCTK_ParameterFilename(parameter_filename.size(), &parameter_filename[0]);
+      stores.store("parameter_filename", &parameter_filename[0]);
     }
 
     {
@@ -403,30 +403,30 @@ extern "C" void Formaline_AnnounceInitial(CCTK_ARGUMENTS) {
     }
 
     {
-      char parameter_filename[10000];
-      CCTK_ParameterFilename(sizeof parameter_filename, parameter_filename);
-      stores.store("parameter_filename", parameter_filename);
+      vector<char> parameter_filename(10000);
+      CCTK_ParameterFilename(parameter_filename.size(), &parameter_filename[0]);
+      stores.store("parameter_filename", &parameter_filename[0]);
     }
 
     {
-      char parameter_filename[10000];
-      char parameter_file[1000000];
+      vector<char> parameter_filename(10000);
+      vector<char> parameter_file(1000000);
       size_t count;
       FILE *file;
-      CCTK_ParameterFilename(sizeof parameter_filename, parameter_filename);
-      file = fopen(parameter_filename, "r");
-      count = fread(parameter_file, 1, sizeof parameter_file - 1, file);
+      CCTK_ParameterFilename(parameter_filename.size(), &parameter_filename[0]);
+      file = fopen(&parameter_filename[0], "r");
+      count = fread(&parameter_file[0], 1, parameter_file.size() - 1, file);
       fclose(file);
-      assert(count < sizeof parameter_file - 1);
+      assert(count < parameter_file.size() - 1);
       parameter_file[count] = '\0';
-      stores.store("parameter_file", parameter_file);
+      stores.store("parameter_file", &parameter_file[0]);
     }
 
     {
-      char cwd[10000];
-      getcwd(cwd, sizeof cwd);
-      cwd[sizeof cwd - 1] = '\0'; // just to be sure
-      stores.store("current_dir", cwd);
+      vector<char> cwd(10000);
+      getcwd(&cwd[0], cwd.size() - 1);
+      cwd[cwd.size() - 1] = '\0'; // just to be sure
+      stores.store("current_dir", &cwd[0]);
     }
 
     { stores.store("out_dir", out_dir); }
