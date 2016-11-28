@@ -11,12 +11,18 @@
 #include <x86intrin.h>
 #endif
 
+#ifdef __AVX2__
+#define vec8_architecture_AVX2 "+AVX2"
+#else
+#define vec8_architecture_AVX2 ""
+#endif
 #ifdef __FMA4__
 #define vec8_architecture_FMA4 "+FMA4"
 #else
 #define vec8_architecture_FMA4 ""
 #endif
-#define vec8_architecture "AVX" vec8_architecture_FMA4 " (64-bit precision)"
+#define vec8_architecture                                                      \
+  "AVX" vec8_architecture_AVX2 vec8_architecture_FMA4 " (64-bit precision)"
 
 // Vector type corresponding to CCTK_REAL
 // Note: some boolean masks (e.g. ~0) correspond to nan when
@@ -173,26 +179,28 @@ static inline CCTK_ATTRIBUTE_ALWAYS_INLINE void
 vec8_store_partial_prepare_(bool &all, __m256i &mask, std::ptrdiff_t const i,
                             std::ptrdiff_t const imin,
                             std::ptrdiff_t const imax) {
-  all = i >= imin and i + CCTK_REAL8_VEC_SIZE - 1 < imax;
+  // all = i >= imin and i + CCTK_REAL8_VEC_SIZE - 1 < imax;
+  all = false;
 
-  if (not CCTK_BUILTIN_EXPECT(all, true)) {
-    /* __m256i const v8stp_mask = */
-    /*   _mm256_andnot_pd(_mm256_add_epi64(_mm256_set1_epi64x(i-imin), */
-    /*                                     vec_index), */
-    /*                    _mm256_add_epi64(_mm256_set1_epi64x(i-imax), */
-    /*                                     vec_index)); */
-    __m128i const termlo01 =
-        _mm_add_epi64(_mm_set1_epi64x(i - imin), _mm_set_epi64x(1, 0));
-    __m128i const termup01 =
-        _mm_add_epi64(_mm_set1_epi64x(i - imax), _mm_set_epi64x(1, 0));
-    __m128i const term01 = _mm_andnot_si128(termlo01, termup01);
-    __m128i const termlo23 =
-        _mm_add_epi64(_mm_set1_epi64x(i - imin), _mm_set_epi64x(3, 2));
-    __m128i const termup23 =
-        _mm_add_epi64(_mm_set1_epi64x(i - imax), _mm_set_epi64x(3, 2));
-    __m128i const term23 = _mm_andnot_si128(termlo23, termup23);
-    mask = _mm256_insertf128_si256(_mm256_castsi128_si256(term01), term23, 1);
-  }
+// if (not CCTK_BUILTIN_EXPECT(all, true)) {
+#ifdef __AVX2__
+  mask = _mm256_andnot_si256(
+      _mm256_add_epi64(vec8_set1i(i - imin), vec8_seti(0, 1, 2, 3)),
+      _mm256_add_epi64(vec8_set1i(i - imax), vec8_seti(0, 1, 2, 3)));
+#else
+  __m128i const termlo01 =
+      _mm_add_epi64(_mm_set1_epi64x(i - imin), _mm_set_epi64x(1, 0));
+  __m128i const termup01 =
+      _mm_add_epi64(_mm_set1_epi64x(i - imax), _mm_set_epi64x(1, 0));
+  __m128i const term01 = _mm_andnot_si128(termlo01, termup01);
+  __m128i const termlo23 =
+      _mm_add_epi64(_mm_set1_epi64x(i - imin), _mm_set_epi64x(3, 2));
+  __m128i const termup23 =
+      _mm_add_epi64(_mm_set1_epi64x(i - imax), _mm_set_epi64x(3, 2));
+  __m128i const term23 = _mm_andnot_si128(termlo23, termup23);
+  mask = _mm256_insertf128_si256(_mm256_castsi128_si256(term01), term23, 1);
+#endif
+  // }
 }
 
 // Store a partial vector (aligned and non-temporal)
@@ -207,12 +215,11 @@ vec8_store_partial_prepare_fixed_(bool &all, __m256i &mask,
                                   std::ptrdiff_t const imax) {
   all = i >= imin and i + CCTK_REAL8_VEC_SIZE - 1 < imax;
 
-  if (not CCTK_BUILTIN_EXPECT(all, true)) {
+  if (not CCTK_BUILTIN_EXPECT(all, true))
     mask = vec8_seti(i + 0 >= imin and i + 0 < imax ? ~0 : 0,
                      i + 1 >= imin and i + 1 < imax ? ~0 : 0,
                      i + 2 >= imin and i + 2 < imax ? ~0 : 0,
                      i + 3 >= imin and i + 3 < imax ? ~0 : 0);
-  }
 }
 
 #define vec8_store_nta_partial(p, x)                                           \
@@ -220,11 +227,10 @@ vec8_store_partial_prepare_fixed_(bool &all, __m256i &mask,
 static inline CCTK_ATTRIBUTE_ALWAYS_INLINE void
 vec8_store_nta_partial_(bool const all, __m256i const mask, CCTK_REAL8 &p,
                         CCTK_REAL8_VEC const x) {
-  if (CCTK_BUILTIN_EXPECT(all, true)) {
+  if (CCTK_BUILTIN_EXPECT(all, true))
     vec8_store_nta(p, x);
-  } else {
+  else
     _mm256_maskstore_pd(&p, mask, x);
-  }
 }
 
 #define vec8_storeu_partial(p, x)                                              \
@@ -232,11 +238,10 @@ vec8_store_nta_partial_(bool const all, __m256i const mask, CCTK_REAL8 &p,
 static inline CCTK_ATTRIBUTE_ALWAYS_INLINE void
 vec8_storeu_partial_(bool const all, __m256i const mask, CCTK_REAL8 &p,
                      CCTK_REAL8_VEC const x) {
-  if (CCTK_BUILTIN_EXPECT(all, true)) {
+  if (CCTK_BUILTIN_EXPECT(all, true))
     vec8_storeu(p, x);
-  } else {
+  else
     _mm256_maskstore_pd(&p, mask, x);
-  }
 }
 
 // Store a lower or higher partial vector (aligned and non-temporal);

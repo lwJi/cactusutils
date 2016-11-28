@@ -51,6 +51,7 @@ vec_static_assert(sizeof(CCTK_REAL8_VEC) ==
 
 #define vec8_store_partial_prepare(i, imin, imax) ((void)0)
 #define vec8_store_nta_partial(p, x) (vec8_store_nta(p, x))
+#define vec8_storeu_partial(p, x) (vec8_storeu(p, x))
 // Store the n lower elements of a vector to memory
 #define vec8_store_nta_partial_lo(p, x, n) (CCTK_BUILTIN_UNREACHABLE())
 // Store the n higher elements of a vector into memory. This stores
