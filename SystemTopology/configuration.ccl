@@ -1,3 +1,7 @@
 # Configuration definitions for thorn SystemTopology
 
+PROVIDES SystemTopology
+{
+}
+
 REQUIRES hwloc MPI
