@@ -5,7 +5,9 @@
 #include <cmath>
 #include <complex>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <iostream>
 #include <list>
 #include <map>
 #include <sstream>
@@ -454,63 +456,78 @@ void set_bindings(hwloc_topology_t topology,
 
   // TODO: use hwloc_distribute instead
   CCTK_INFO("Setting thread CPU bindings:");
+
+  // All quantities are per host
+  int const core_depth =
+      hwloc_get_type_or_below_depth(topology, HWLOC_OBJ_CORE);
+  assert(core_depth >= 0);
+  int const num_cores = hwloc_get_nbobjs_by_depth(topology, core_depth);
+  // cout << "num_cores=" << num_cores << "\n";
+  assert(num_cores > 0);
+  int const pu_depth = hwloc_get_type_or_below_depth(topology, HWLOC_OBJ_PU);
+  assert(pu_depth >= 0);
+  int const num_pus = hwloc_get_nbobjs_by_depth(topology, pu_depth);
+  // cout << "num_pus=" << num_pus << "\n";
+  assert(num_pus > 0);
+  assert(num_pus % num_cores == 0);
+  int const max_smt_threads = num_pus / num_cores;
+  // cout << "max_smt_threads=" << max_smt_threads << "\n";
+  int const num_threads_in_proc = omp_get_max_threads();
+  // cout << "num_threads_in_proc=" << num_threads_in_proc << "\n";
+  int const num_procs = host_mapping.mpi_num_procs_on_host;
+  // cout << "num_procs=" << num_procs << "\n";
+  int const num_threads = num_threads_in_proc * num_procs;
+  // cout << "num_threads=" << num_threads << "\n";
+  int const num_smt_threads = divup(num_threads, num_cores);
+  // cout << "num_smt_threads=" << num_smt_threads << "\n";
+  int const core_spacing =
+      dense_layout ? 1 : num_cores / (num_threads / num_smt_threads);
+  // cout << "core_spacing=" << core_spacing << "\n";
+  int const proc_num = host_mapping.mpi_proc_num_on_host;
+  // cout << "proc_num=" << proc_num << "\n";
+  int const thread_offset = num_threads_in_proc * proc_num;
+// cout << "thread_offset=" << thread_offset << "\n";
+
+// Bind thread to exactly one PU
 #pragma omp parallel
-  {
-    // All quantities are per host
-    int const core_depth =
-        hwloc_get_type_or_below_depth(topology, HWLOC_OBJ_CORE);
-    assert(core_depth >= 0);
-    int const num_cores = hwloc_get_nbobjs_by_depth(topology, core_depth);
-    assert(num_cores > 0);
-    int const pu_depth = hwloc_get_type_or_below_depth(topology, HWLOC_OBJ_PU);
-    assert(pu_depth >= 0);
-    int const num_pus = hwloc_get_nbobjs_by_depth(topology, pu_depth);
-    assert(num_pus > 0);
-    assert(num_pus % num_cores == 0);
-    int const max_smt_threads = num_pus / num_cores;
-    int const num_threads_in_proc = omp_get_num_threads();
-    int const num_procs = host_mapping.mpi_num_procs_on_host;
-    int const num_threads = num_threads_in_proc * num_procs;
-    int const num_smt_threads = divup(num_threads, num_cores);
-    int const core_spacing =
-        dense_layout ? 1 : num_cores / (num_threads / num_smt_threads);
-    int const proc_num = host_mapping.mpi_proc_num_on_host;
-    int const thread_offset = num_threads_in_proc * proc_num;
-    // Bind thread to exactly one PU
-    for (int thread_num_in_proc = 0; thread_num_in_proc < num_threads_in_proc;
-         ++thread_num_in_proc) {
-      if (thread_num_in_proc == omp_get_thread_num()) {
-        int const thread_num = thread_offset + thread_num_in_proc;
-        // Map requested threads to existing cores, oversubscribing
-        // or spacing if necessary
-        int const core_num = thread_num / num_smt_threads * core_spacing;
-        assert(core_num < num_cores);
-        // Map requested SMT threads to existing PUs,
-        // oversubscribing if necessary
-        int const pu_offset =
-            thread_num % num_smt_threads * max_smt_threads / num_smt_threads;
-        assert(pu_offset < max_smt_threads);
-        int const pu_num = core_num * max_smt_threads + pu_offset;
-        assert(pu_num < num_pus);
-        hwloc_obj_t pu_obj = hwloc_get_obj_by_depth(topology, pu_depth, pu_num);
-        assert(pu_obj);
-        // hwloc_cpuset_t cpuset = hwloc_bitmap_dup(pu_obj->cpuset);
-        hwloc_cpuset_t cpuset = pu_obj->cpuset;
-        int ierr;
-        ierr = hwloc_set_cpubind(topology, cpuset,
-                                 HWLOC_CPUBIND_THREAD | HWLOC_CPUBIND_STRICT);
-        if (ierr) {
-          ierr = hwloc_set_cpubind(topology, cpuset, HWLOC_CPUBIND_THREAD);
-        }
-        if (ierr) {
-          CCTK_VWarn(CCTK_WARN_ALERT, __LINE__, __FILE__, CCTK_THORNSTRING,
-                     "Could not set CPU binding for thread %d",
-                     thread_num_in_proc);
-        }
-        // hwloc_bitmap_free(cpuset);
+  for (int thread_num_in_proc = 0; thread_num_in_proc < num_threads_in_proc;
+       ++thread_num_in_proc) {
+    if (thread_num_in_proc == omp_get_thread_num()) {
+      // cout << "thread_num_in_proc=" << thread_num_in_proc << "\n";
+      int const thread_num = thread_offset + thread_num_in_proc;
+      // cout << "thread_num=" << thread_num << "\n";
+      // Map requested threads to existing cores, oversubscribing
+      // or spacing if necessary
+      int const core_num = thread_num / num_smt_threads * core_spacing;
+      // cout << "core_num=" << core_num << "\n";
+      assert(core_num < num_cores);
+      // Map requested SMT threads to existing PUs,
+      // oversubscribing if necessary
+      int const pu_offset =
+          thread_num % num_smt_threads * max_smt_threads / num_smt_threads;
+      // cout << "pu_offset=" << pu_offset << "\n";
+      assert(pu_offset < max_smt_threads);
+      int const pu_num = core_num * max_smt_threads + pu_offset;
+      // cout << "pu_num=" << pu_num << "\n";
+      assert(pu_num < num_pus);
+      hwloc_obj_t pu_obj = hwloc_get_obj_by_depth(topology, pu_depth, pu_num);
+      assert(pu_obj);
+      // hwloc_cpuset_t cpuset = hwloc_bitmap_dup(pu_obj->cpuset);
+      hwloc_cpuset_t cpuset = pu_obj->cpuset;
+      int ierr;
+      ierr = hwloc_set_cpubind(topology, cpuset,
+                               HWLOC_CPUBIND_THREAD | HWLOC_CPUBIND_STRICT);
+      if (ierr) {
+        ierr = hwloc_set_cpubind(topology, cpuset, HWLOC_CPUBIND_THREAD);
       }
-#pragma omp barrier
+      if (ierr) {
+        CCTK_VWarn(CCTK_WARN_ALERT, __LINE__, __FILE__, CCTK_THORNSTRING,
+                   "Could not set CPU binding for thread %d",
+                   thread_num_in_proc);
+      }
+      // hwloc_bitmap_free(cpuset);
     }
+#pragma omp barrier
   }
 }
 }
@@ -776,8 +793,20 @@ extern "C" int ST_system_topology() {
 #else
     do_set_thread_bindings = true;
 #endif
+  } else if (CCTK_EQUALS(set_thread_bindings, "env")) {
+    const char *CACTUS_SET_THREAD_BINDINGS =
+        getenv("CACTUS_SET_THREAD_BINDINGS");
+    if (!CACTUS_SET_THREAD_BINDINGS) {
+      do_set_thread_bindings = false;
+    } else {
+      string set_bindings = CACTUS_SET_THREAD_BINDINGS;
+      transform(set_bindings.begin(), set_bindings.end(), set_bindings.begin(),
+                ::tolower);
+      do_set_thread_bindings = set_bindings == "true" ||
+                               set_bindings == "yes" || set_bindings == "1";
+    }
   } else {
-    CCTK_BUILTIN_UNREACHABLE();
+    CCTK_BUILTIN_TRAP();
   }
   if (do_set_thread_bindings) {
     set_bindings(topology, *mpi_host_mapping);
