@@ -133,8 +133,8 @@ extern "C" void NaNChecker_NaNCheck_Prepare(CCTK_ARGUMENTS) {
   DECLARE_CCTK_PARAMETERS;
   int i, nelems;
 
-  if (cctk_iteration < check_after ||
-      check_every == 0 || cctk_iteration % check_every) {
+  if (cctk_iteration < check_after || check_every == 0 ||
+      cctk_iteration % check_every) {
     return;
   }
 
@@ -179,8 +179,8 @@ extern "C" void NaNChecker_NaNCheck_Check(CCTK_ARGUMENTS) {
   DECLARE_CCTK_ARGUMENTS;
   DECLARE_CCTK_PARAMETERS;
 
-  if (cctk_iteration < check_after ||
-      check_every == 0 || cctk_iteration % check_every ||
+  if (cctk_iteration < check_after || check_every == 0 ||
+      cctk_iteration % check_every ||
       (info.NaNmask && cctk_iteration == last_iteration_output)) {
     return;
   }
@@ -192,8 +192,8 @@ extern "C" void NaNChecker_NaNCheck_Finish(CCTK_ARGUMENTS) {
   DECLARE_CCTK_ARGUMENTS;
   DECLARE_CCTK_PARAMETERS;
 
-  if (cctk_iteration < check_after ||
-      check_every == 0 || cctk_iteration % check_every ||
+  if (cctk_iteration < check_after || check_every == 0 ||
+      cctk_iteration % check_every ||
       (info.NaNmask && cctk_iteration == last_iteration_output)) {
     return;
   }
@@ -453,9 +453,8 @@ extern "C" int NaNChecker_SetVarsToNaN(const cGH *GH, const char *vars) {
   return (info.count);
 }
 
-extern "C" void
-    CCTK_FCALL CCTK_FNAME(NaNChecker_SetVarsToNaN)(int *ierror, const cGH **GH,
-                                                   ONE_FORTSTRING_ARG) {
+extern "C" void CCTK_FCALL CCTK_FNAME(NaNChecker_SetVarsToNaN)(
+    int *ierror, const cGH **GH, ONE_FORTSTRING_ARG) {
   ONE_FORTSTRING_CREATE(vars);
   *ierror = NaNChecker_SetVarsToNaN(*GH, vars);
   free(vars);
