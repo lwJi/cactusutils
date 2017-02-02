@@ -663,7 +663,7 @@ void measure_read_latency(const MPI_Comm comm, const int proc_num_threads) {
     // actually allocated by the operating system
     vector<char> skiparray(skip_memsize, 1);
 
-    // Allocate benchmark data structures
+// Allocate benchmark data structures
 #if 0
     const ptrdiff_t offset = 0xa1d2d5ff; // a random number
 #endif
@@ -1354,52 +1354,80 @@ void measure_write_bandwidth2(const MPI_Comm comm, const int proc_num_threads) {
   }
 }
 
-void measure_stencil_performance(const MPI_Comm comm, const int num_threads) {
+void measure_stencil_performance(const MPI_Comm comm,
+                                 const int proc_num_threads) {
   DECLARE_CCTK_PARAMETERS;
 
   // The basic benchmark harness is the same as above, no comments
   // here
   for (int cache = 0; cache < int(cache_info.size()); ++cache) {
-    ptrdiff_t skip_memsize, memsize;
-    calc_memsizes(cache, skip_memsize, memsize);
-    assert(memsize > 0);
-    if (skip_largemem_benchmarks && skip_memsize > 0)
-      continue;
+
+    // Determine memory size
+    ptrdiff_t skip_memsize, cache_memsize;
+    calc_memsizes(cache, skip_memsize, cache_memsize);
+
+    // Determine thread numbers
+    const int node_num_pus = cache_info[cache_info.size() - 1].num_pus;
+    const int cache_num_pus = cache_info[cache].num_pus;
+    assert(node_num_pus % cache_num_pus == 0);
+    const int num_smt_threads = GetNumSMTThreads();
+    const int max_smt_threads = GetMaxSMTThreads();
+
+    const bool is_multi_proc_cache =
+        cache_num_pus * max_smt_threads >
+        node_num_pus * num_smt_threads * proc_num_threads;
+    const int node_procs = mpi_info.mpi_num_procs_on_host;
     int comm_size;
     MPI_Comm_size(comm, &comm_size);
-    const int total_pus = comm_size * num_threads;
-    const int mem_pus = cache_info[cache].num_pus;
-    // const bool small_cache = num_threads % mem_pus == 0;
-    // const bool large_cache = mem_pus % num_threads == 0;
-    const bool small_cache = num_threads >= mem_pus;
-    const bool large_cache = mem_pus >= num_threads;
-    assert(small_cache || large_cache);
-    const int num_active_procs = small_cache ? comm_size : 1;
-    // assert(mem_pus % num_active_procs == 0);
-    // number of local arrays
-    // assert(total_pus % mem_pus == 0);
-    const int num_allocs = (total_pus + mem_pus - 1) / mem_pus;
-    assert(num_allocs % num_active_procs == 0);
-    const ptrdiff_t np = llrint(
-        pow(memsize / (2.0 * sizeof(CCTK_REAL) * num_allocs), 1.0 / 3.0));
+    assert(comm_size <= node_procs);
+    const int node_procs_active = is_multi_proc_cache ? 1 : comm_size;
+
+    const int proc_num_pus =
+        divup(proc_num_threads * max_smt_threads, num_smt_threads);
+    const int thread_alloc_every =
+        divup(proc_num_threads * cache_num_pus, proc_num_pus);
+    const int proc_num_allocs = divup(proc_num_threads, thread_alloc_every);
+    const int node_num_allocs = proc_num_allocs * node_procs_active;
+
+    const ptrdiff_t node_memsize = cache_info[cache_info.size() - 1].size;
+    // const ptrdiff_t node_memsize_used =
+    //     (skip_memsize + proc_num_allocs * cache_memsize) * node_procs_active;
+    const ptrdiff_t np =
+        llrint(pow(cache_memsize / (2.0 * sizeof(CCTK_REAL) * proc_num_allocs),
+                   1.0 / 3.0));
+    const ptrdiff_t grid_memsize = 2 * sizeof(CCTK_REAL) * np * np * np;
+    const ptrdiff_t node_memsize_used =
+        (skip_memsize + proc_num_allocs * grid_memsize) * node_procs_active;
+
     if (verbose) {
       printf("    Stencil code performance of %s (for %d PUs) (using %d*%td^3 "
-             "grid points, %d*%td bytes):\n",
+             "grid points, using %d*%td bytes):\n",
              cache_info[cache].name.c_str(), cache_info[cache].num_pus,
-             num_allocs, np, num_allocs, 2 * sizeof(CCTK_REAL) * np * np * np);
+             node_num_allocs, np, node_num_allocs, grid_memsize);
     } else {
-      printf("    Stencil code performance %s (for %d PUs):",
+      printf("    Stencil code performance of %s (for %d PUs):",
              cache_info[cache].name.c_str(), cache_info[cache].num_pus);
     }
     fflush(stdout);
-    const ptrdiff_t node_memory = cache_info[cache_info.size() - 1].size;
-    if (comm_size > num_active_procs ||
-        (skip_memsize + memsize) * comm_size > node_memory * 3 / 4) {
+
+    if (comm_size > node_procs_active) {
       printf("      [skipped -- too many MPI processes]\n");
       continue;
     }
+    if (node_memsize_used > node_memsize * 3 / 4) {
+      printf("      [skipped -- too much memory requested]\n");
+      continue;
+    }
+    if (skip_largemem_benchmarks && node_memsize_used > node_memsize / 4) {
+      printf("      [skipped -- avoiding large-memory benchmarks]\n");
+      continue;
+    }
+
+    // Allocate skipped memory, filling it with 1 so that it is
+    // actually allocated by the operating system
     vector<char> skiparray(skip_memsize, 1);
-    // Allocate array
+
+    // Allocate benchmark data structures
     const ptrdiff_t npa =
         (np + CCTK_REAL_VEC_SIZE - 1) / CCTK_REAL_VEC_SIZE * CCTK_REAL_VEC_SIZE;
     vector<CCTK_REAL> srcv(npa * np * np + CCTK_REAL_VEC_SIZE - 1);
@@ -1413,7 +1441,7 @@ void measure_stencil_performance(const MPI_Comm comm, const int num_threads) {
     const ptrdiff_t di = 1;
     const ptrdiff_t dj = di * npa;
     const ptrdiff_t dk = dj * np;
-#pragma omp parallel for num_threads(num_threads) collapse(3)
+#pragma omp parallel for num_threads(proc_num_threads) collapse(3)
     for (ptrdiff_t k = 0; k < np; ++k) {
       for (ptrdiff_t j = 0; j < np; ++j) {
         for (ptrdiff_t i = 0; i < np; ++i) {
@@ -1423,6 +1451,9 @@ void measure_stencil_performance(const MPI_Comm comm, const int num_threads) {
         }
       }
     }
+
+    // The basic benchmark harness is the same as above, no comments
+    // here
     double min_elapsed = 1.0;
     ptrdiff_t max_count = 1;
     double elapsed;
@@ -1433,34 +1464,39 @@ void measure_stencil_performance(const MPI_Comm comm, const int num_threads) {
       }
       MPI_Barrier(comm);
       elapsed = 0.0;
-      const double t0 = omp_get_wtime();
-      for (int count = 0; count < max_count; ++count) {
-        const ptrdiff_t imin = 1 / CCTK_REAL_VEC_SIZE * CCTK_REAL_VEC_SIZE;
-#pragma omp parallel for num_threads(num_threads) collapse(3)
-        for (ptrdiff_t k = 1; k < np - 1; ++k) {
-          for (ptrdiff_t j = 1; j < np - 1; ++j) {
-            for (ptrdiff_t i = imin; i < np - 1; i += CCTK_REAL_VEC_SIZE) {
-              const ptrdiff_t n = di * i + dj * j + dk * k;
-              CCTK_REAL_VEC x = vec_load(src[n]);
-              CCTK_REAL_VEC dxi, dxj, dxk;
-              dxi = kadd(vec_loadu_maybe(-di, src[n - di]),
-                         vec_loadu_maybe(+di, src[n + di]));
-              dxj = kadd(vec_load(src[n - dj]), vec_load(src[n + dj]));
-              dxk = kadd(vec_load(src[n - dk]), vec_load(src[n + dk]));
-              x = kadd(kmul(vec_set1(0.5), x),
-                       kmul(vec_set1(0.5 / 3.0), kadd(kadd(dxi, dxj), dxk)));
-              // vec_store(dst[n], x);
-              vec_store_partial_prepare(i, 1, np - 1);
-              vec_store_nta_partial(dst[n], x);
+      volatile CCTK_REAL use CCTK_ATTRIBUTE_UNUSED = 0;
+#pragma omp parallel num_threads(proc_num_threads) reduction(+ : elapsed, use)
+      {
+#pragma omp barrier
+        const double t0 = omp_get_wtime();
+        for (ptrdiff_t count = 0; count < max_count; ++count) {
+
+          const ptrdiff_t imin = 1 / CCTK_REAL_VEC_SIZE * CCTK_REAL_VEC_SIZE;
+#pragma omp for collapse(3)
+          for (ptrdiff_t k = 1; k < np - 1; ++k) {
+            for (ptrdiff_t j = 1; j < np - 1; ++j) {
+              for (ptrdiff_t i = imin; i < np - 1; i += CCTK_REAL_VEC_SIZE) {
+                const ptrdiff_t n = di * i + dj * j + dk * k;
+                CCTK_REAL_VEC x = vec_load(src[n]);
+                CCTK_REAL_VEC dxi, dxj, dxk;
+                dxi = kadd(vec_loadu_maybe(-di, src[n - di]),
+                           vec_loadu_maybe(+di, src[n + di]));
+                dxj = kadd(vec_load(src[n - dj]), vec_load(src[n + dj]));
+                dxk = kadd(vec_load(src[n - dk]), vec_load(src[n + dk]));
+                x = kadd(kmul(vec_set1(0.5), x),
+                         kmul(vec_set1(0.5 / 3.0), kadd(kadd(dxi, dxj), dxk)));
+                // vec_store(dst[n], x);
+                vec_store_partial_prepare(i, 1, np - 1);
+                vec_store_nta_partial(dst[n], x);
+              }
             }
           }
+          swap(src, dst);
         }
-        swap(src, dst);
+        const double t1 = omp_get_wtime();
+        elapsed += t1 - t0;
       }
-      const double t1 = omp_get_wtime();
-      volatile CCTK_REAL use_s CCTK_ATTRIBUTE_UNUSED = dst[0];
-      elapsed += t1 - t0;
-      elapsed = mpi_average(comm, elapsed / num_threads);
+      elapsed = mpi_average(comm, elapsed / proc_num_threads);
       if (verbose) {
         printf(" time=%g sec\n", elapsed);
       }
