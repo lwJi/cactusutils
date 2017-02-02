@@ -373,7 +373,7 @@ $(TOP)/build/Formaline/git-store-source: $(BUILD-ID-FILE) $(TARBALL_DIR)/flesh-C
 	$(TARBALL_DIR)/config-Cactus.files | $(FORMALINE-UTILS)
 	export 'CCTK_HOME=$(CCTK_HOME)' && \
 	if [ -e '$(CCTK_HOME)/cactus.config' ]; then \
-		source '$(CCTK_HOME)/cactus.config'; \
+		. '$(CCTK_HOME)/cactus.config'; \
 	fi && \
 	export 'GIT_SSH=$(GIT-BIN)/git-ssh.sh' && \
 	export 'CACTUS_CENTRAL_SSH_ID' && \
