@@ -14,7 +14,7 @@
 
 using namespace std;
 
-  
+
 
 namespace Accelerator {
   
@@ -115,21 +115,21 @@ namespace Accelerator {
       for (int tl=num_tl-1; tl>0; --tl) {
         
         // Cycle those timelevels that are valid on the device
-        if (device->mem(vi, rl, tl-1).device_valid) {
+        if (device->mem(vi, rl, tl-1).get_device_valid()) {
           vars.push_back(vi, rl, tl);
         }
         
-        device->mem(vi, rl, tl).device_valid =
-          device->mem(vi, rl, tl-1).device_valid;
+        device->mem(vi, rl, tl).set_device_valid(
+          device->mem(vi, rl, tl-1).get_device_valid());
         // Cycle host information here as well
-        device->mem(vi, rl, tl).host_valid =
-          device->mem(vi, rl, tl-1).host_valid;
+        device->mem(vi, rl, tl).set_host_valid(
+          device->mem(vi, rl, tl-1).get_host_valid());
       }
       if (num_tl>1) {
         // Current timelevel is now invalid
-      	device->mem(vi, rl, 0).device_valid = false;
+      	device->mem(vi, rl, 0).set_device_valid(false);
       	// Cycle host information here as well
-      	device->mem(vi, rl, 0).host_valid = false;
+      	device->mem(vi, rl, 0).set_host_valid(false);
       }
     }
     
@@ -180,7 +180,7 @@ namespace Accelerator {
       if (device->ntimelevels(vi, rl) == tl) {
         // We assume the host does not have valid data (otherwise, why
         // would the code copy to the current timelevel?)
-        mem_t const newmem = {false, false};
+        mem_t const newmem = {vi, rl, tl, false, false};
         device->create_timelevel(vi, rl, tl, newmem);
         unknowns.push_back(vi, rl, tl);
       }
@@ -188,7 +188,7 @@ namespace Accelerator {
       if (device->ntimelevels(vi, rl) == tl+1) {
         // We assume the host has valid data (otherwise, why would the
         // code copy from the past timelevel?)
-        mem_t const newmem = {true, false};
+        mem_t newmem = {vi, rl, tl, true, false};
         device->create_timelevel(vi, rl, tl+1, newmem);
         unknowns.push_back(vi, rl, tl+1);
       }
@@ -204,10 +204,10 @@ namespace Accelerator {
       assert(device->mem(vi, rl, tl+1).device_valid);
 #endif
       
-      if (device->mem(vi, rl, tl+1).device_valid) {
+      if (device->mem(vi, rl, tl+1).get_device_valid()) {
         vars.push_back(vi, rl, tl);
-        device->mem(vi, rl, tl).device_valid =
-          device->mem(vi, rl, tl+1).device_valid;
+        device->mem(vi, rl, tl).set_device_valid(
+          device->mem(vi, rl, tl+1).get_device_valid());
       }      
     }
     
@@ -220,8 +220,8 @@ namespace Accelerator {
     return 0;
   }
   
-
-
+  
+  
   extern "C"
   CCTK_INT
   AcceleratorThorn_PreCallFunction(CCTK_POINTER_TO_CONST const cctkGH_,
@@ -297,7 +297,7 @@ namespace Accelerator {
     
     // Copy all required variables to the device or to the host,
     // depending on the language (device or not)
-    bool mem_t::*dst_valid, mem_t::*src_valid;
+    mem_t::memtype_t dst_valid, src_valid;
     CCTK_INT (*copy) (CCTK_POINTER_TO_CONST cctkGH,
                       CCTK_INT const *vars,
                       CCTK_INT const *rls,
@@ -305,12 +305,12 @@ namespace Accelerator {
                       CCTK_INT nvars,
                       CCTK_INT *moved);
     if (is_device) {
-      dst_valid = &mem_t::device_valid;
-      src_valid = &mem_t::host_valid;
+      dst_valid = mem_t::device_is_valid;//&mem_t::device_valid;
+      src_valid = mem_t::host_is_valid;//&mem_t::host_valid;
       copy = Device_CopyToDevice;
     } else {
-      dst_valid = &mem_t::host_valid;
-      src_valid = &mem_t::device_valid;
+      dst_valid = mem_t::host_is_valid;//&mem_t::host_valid;
+      src_valid = mem_t::device_is_valid;//&mem_t::device_valid;
       copy = Device_CopyToHost;
     }
     
@@ -337,24 +337,29 @@ namespace Accelerator {
         { // Maintain indentation
           for (int tl=0; tl<num_tl; ++tl) {
             
-            if(tl >= device->ntimelevels(vi,rl)) {
-              std::ostringstream msg;
-              msg << "In Accelerator_PreCallFunction(): ";
-              msg << "Variable = " << CCTK_VarName(vi) << " rl=" << rl << " tl=" << tl;
-              msg << " In function " << attribute->thorn << "::" << attribute->routine << std::endl;
-              std::string msg_str = msg.str();
-              CCTK_ERROR(msg_str.c_str());
+            assert(tl <= device->ntimelevels(vi, rl));
+            if (device->ntimelevels(vi, rl) == tl) {
+              // We see this variable for the first time here, which
+              // means that the function which generated it does not
+              // declare the variable in WRITES (otherwise we would
+              // have seen it in PostCall). This must be a host
+              // function, as all device functions presumably have
+              // valid WRITES lists. Therefore we assume the variable
+              // is valid on the host.
+              mem_t const newmem = {vi, rl, tl, true, false};
+              device->create_timelevel(vi, rl, tl, newmem);
+              unknowns.push_back(vi, rl, tl);
             }
             
-            if (not (device->mem(vi, rl, tl).*dst_valid)) {
-              if (not (device->mem(vi, rl, tl).*src_valid)) {
+            if (not (device->mem(vi, rl, tl).get(dst_valid))) {
+              if (not (device->mem(vi, rl, tl).get(src_valid))) {
                 CCTK_VWarn(CCTK_WARN_ABORT, __LINE__, __FILE__, CCTK_THORNSTRING,
                            "Variable %s:%d is neither valid on the host nor on the device before function %s::%s",
                            CCTK_FullName(vi), tl,attribute->thorn,attribute->routine);
               }
               vars.push_back(vi, rl, tl);
               // This will be true after the copy operation below
-              device->mem(vi, rl, tl).*dst_valid = true;
+              device->mem(vi, rl, tl).set(dst_valid,true);
             }
             
           }
@@ -386,7 +391,7 @@ namespace Accelerator {
               // is not read by this function (otherwise it would have
               // been generated in the loop above). We can therefore
               // safely assume that this variable is undefined.
-              mem_t const newmem = {false, false};
+              mem_t const newmem = {vi, rl, tl, false, false};
               device->create_timelevel(vi, rl, tl, newmem);
               unknowns.push_back(vi, rl, tl);
             }
@@ -394,8 +399,8 @@ namespace Accelerator {
             // This variable was written by the function which will
             // execute, therefore it will be valid there and invalid
             // elsewhere.
-            device->mem(vi, rl, tl).*dst_valid = true;
-            device->mem(vi, rl, tl).*src_valid = false;
+            device->mem(vi, rl, tl).set(dst_valid,true);
+            device->mem(vi, rl, tl).set(src_valid,false);
             
           }
         }
@@ -431,7 +436,7 @@ namespace Accelerator {
         int const vi = vars.vi_ptr()[var];
         int const rl = vars.rl_ptr()[var];
         int const tl = vars.tl_ptr()[var];
-        device->mem(vi, rl, tl).*src_valid = false;
+        device->mem(vi, rl, tl).set(src_valid,false);
       }
     }
     
@@ -572,7 +577,7 @@ namespace Accelerator {
           int const vi = vars.vi_ptr()[var];
           int const tl = vars.tl_ptr()[var];
           int const rl = vars.rl_ptr()[var];
-          device->mem(vi, rl, tl).device_valid = false;
+          device->mem(vi, rl, tl).set_device_valid(false);
         }
       }
       
@@ -618,9 +623,11 @@ namespace Accelerator {
         assert(v0>=0);
         for (int vi=v0; vi<v0+nv; ++vi) {
           int const tl=0;       // only copy current timelevel
-          if (!device->mem(vi, rl, tl).host_valid) {
-            assert(device->mem(vi, rl, tl).device_valid);
-              vars.push_back(vi, rl, tl);
+          if (!device->mem(vi, rl, tl).get_host_valid()) {
+            if(!device->mem(vi, rl, tl).get_device_valid())
+              return 0;
+            assert(device->mem(vi, rl, tl).get_device_valid());
+            vars.push_back(vi, rl, tl);
           }
         }
       }
@@ -638,7 +645,6 @@ namespace Accelerator {
         
         Device_CopyPreSync
           (cctkGH, vars.vi_ptr(), vars.rl_ptr(), vars.tl_ptr(), vars.nvars());
-        
       } END_LOCAL_COMPONENT_LOOP;
     } END_LOCAL_MAP_LOOP;
     
@@ -682,7 +688,7 @@ namespace Accelerator {
         assert(v0>=0);
         for (int vi=v0; vi<v0+nv; ++vi) {
           int const tl=0;       // only copy current timelevel
-          if (device->mem(vi, rl, tl).device_valid) {
+          if (device->mem(vi, rl, tl).get_device_valid()) {
             vars.push_back(vi, rl, tl);
           }
         }
@@ -728,21 +734,29 @@ namespace Accelerator {
       CCTK_VInfo(CCTK_THORNSTRING, "NotifyDataModified");
     }
     
-    bool mem_t::*valid, mem_t::*invalid;
+    mem_t::memtype_t valid, invalid;
     if (on_device) {
-      valid   = &mem_t::device_valid;
-      invalid = &mem_t::host_valid;
+      valid   = mem_t::device_is_valid;
+      invalid = mem_t::host_is_valid;
     } else {
-      valid   = &mem_t::host_valid;
-      invalid = &mem_t::device_valid;
+      valid   = mem_t::host_is_valid;
+      invalid = mem_t::device_is_valid;
     }
     
     for (int var=0; var<nvariables; ++var) {
       int const vi = variables[var];
       int const rl = rls[var];
       int const tl = tls[var];
-      device->mem(vi, rl, tl).*valid   = true;
-      device->mem(vi, rl, tl).*invalid = false;
+      /**
+       * Some variables are never involved in a computation on the
+       * device. For these, we don't need (and are unlikely to have)
+       * a mem_t structure.
+       */
+      if(valid == mem_t::host_is_valid && !device->has_mem(vi, rl, tl)) {
+        continue;
+      }
+      device->mem(vi, rl, tl).set(valid,true);
+      device->mem(vi, rl, tl).set(invalid,false);
     }
     
     return 0;
@@ -784,18 +798,18 @@ namespace Accelerator {
       // valid at the requested location. This makes it
       // possible to call RequireValidData, and that the
       // call to RequireValidData does not copy the data.
-      if(!device->mem(vi, rl, tl).host_valid && !device->mem(vi, rl, tl).device_valid) {
+      if(!device->mem(vi, rl, tl).get_host_valid() && !device->mem(vi, rl, tl).get_device_valid()) {
         if(on_device)
-          device->mem(vi, rl, tl).device_valid = true;
+          device->mem(vi, rl, tl).set_device_valid(true);
         else
-          device->mem(vi, rl, tl).host_valid = true;
+          device->mem(vi, rl, tl).set_host_valid(true);
       }
       assert(tl <= device->ntimelevels(vi, rl));
       if (device->ntimelevels(vi, rl) == tl) {
         // We see this variable for the first time here, and the
         // caller does not expect valid data. We therefore assume the
         // variable is invalid everywhere.
-        mem_t const newmem = {false, false};
+        mem_t const newmem = {vi, rl, tl, false, false};
         device->create_timelevel(vi, rl, tl, newmem);
         unknowns.push_back(vi, rl, tl);
       }
@@ -830,7 +844,8 @@ namespace Accelerator {
     
     // Copy all required variables to the device or to the host,
     // depending on the language (device or not)
-    bool mem_t::*dst_valid, mem_t::*src_valid;
+    //bool mem_t::*dst_valid, mem_t::*src_valid;
+    mem_t::memtype_t dst_valid, src_valid;
     CCTK_INT (*copy) (CCTK_POINTER_TO_CONST cctkGH,
                       CCTK_INT const *vars,
                       CCTK_INT const *rls,
@@ -838,12 +853,12 @@ namespace Accelerator {
                       CCTK_INT nvars,
                       CCTK_INT *moved);
     if (on_device) {
-      dst_valid = &mem_t::device_valid;
-      src_valid = &mem_t::host_valid;
+      dst_valid = mem_t::device_is_valid;//&mem_t::device_valid;
+      src_valid = mem_t::host_is_valid;//&mem_t::host_valid;
       copy = Device_CopyToDevice;
     } else {
-      dst_valid = &mem_t::host_valid;
-      src_valid = &mem_t::device_valid;
+      dst_valid = mem_t::host_is_valid;//&mem_t::host_valid;
+      src_valid = mem_t::device_is_valid;//&mem_t::device_valid;
       copy = Device_CopyToHost;
     }
     
@@ -864,23 +879,14 @@ namespace Accelerator {
         // PostCall). This must be a host function, as all device
         // functions presumably have valid WRITES lists. Therefore we
         // assume the variable is valid on the host.
-        mem_t const newmem = {true, false};
+        mem_t const newmem = {vi, rl, tl, true, false};
         device->create_timelevel(vi, rl, tl, newmem);
         unknowns.push_back(vi, rl, tl);
       }
       
-      if (not (device->mem(vi, rl, tl).*dst_valid)) {
-        if(device->mem(vi, rl, tl).*src_valid) {
-          vars.push_back(vi, rl, tl);
-        } else {
-          device->mem(vi, rl, tl).*dst_valid = true;
-          std::ostringstream msg;
-          msg << "In Accelerator_RequireValidData(): No destination is valid ";
-          msg << "Variable = " << CCTK_VarName(vi) << " rl=" << rl << " tl=" << tl;
-          msg << std::endl;
-          std::string msg_str = msg.str();
-          CCTK_ERROR(msg_str.c_str());
-        }
+      if (not (device->mem(vi, rl, tl).get(dst_valid))) {
+        assert(device->mem(vi, rl, tl).get(src_valid));
+        vars.push_back(vi, rl, tl);
       }
     }
     
@@ -893,13 +899,14 @@ namespace Accelerator {
     
     // If the data were moved (instead of copied), mark them as
     // invalid on the source
-    if (moved) {
       for (int var=0; var<vars.nvars(); ++var) {
         int const vi = vars.vi_ptr()[var];
         int const rl = vars.rl_ptr()[var];
         int const tl = vars.tl_ptr()[var];
-        device->mem(vi, rl, tl).*src_valid = false;
-      }
+		device->mem(vi, rl, tl).set(dst_valid, true);
+		if (moved) {
+			device->mem(vi, rl, tl).set(src_valid,false);
+		}
     }
     
     return 0;
@@ -934,11 +941,11 @@ namespace Accelerator {
     vars_t& vars = args.vars;
     for (int tl=0; tl<num_tl; ++tl) {
       if (tl < device->ntimelevels(vi, rl)) {
-        if (not device->mem(vi, rl, tl).host_valid and
-            device->mem(vi, rl, tl).device_valid)
+        if (not device->mem(vi, rl, tl).get_host_valid() and
+            device->mem(vi, rl, tl).get_device_valid())
         {
           vars.push_back(vi, rl, tl);
-          device->mem(vi, rl, tl).host_valid = true;
+          device->mem(vi, rl, tl).set_host_valid(true);
         }
       }
     }
@@ -974,10 +981,10 @@ namespace Accelerator {
         int const vi = vars.vi_ptr()[var];
         int const rl = vars.rl_ptr()[var];
         int const tl = vars.tl_ptr()[var];
-        device->mem(vi, rl, tl).device_valid = false;
+        device->mem(vi, rl, tl).set_device_valid(false);
       }
     }
     
   }
-
+     
 } // namespace Accelerator

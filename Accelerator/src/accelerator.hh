@@ -4,6 +4,7 @@
 #include <cctk.h>
 #include <cassert>
 #include <vector>
+#include <iostream>
 
 
 namespace Accelerator {
@@ -76,12 +77,52 @@ namespace Accelerator {
   
   
   struct mem_t {
+    enum memtype_t { host_is_valid, device_is_valid };
+    void set_host_valid(bool b) {
+      host_valid = b;
+      diag();
+    }
+    void set_device_valid(bool b) {
+      device_valid = b;
+      diag();
+    }
+    bool get_host_valid() const {
+      return host_valid;
+    }
+    bool get_device_valid() const {
+      return device_valid;
+    }
+    bool get(memtype_t m) const {
+      if(m == host_is_valid)
+        return host_valid;
+      else
+        return device_valid;
+    }
+    void set(memtype_t m,bool b) {
+      if(m == host_is_valid)
+        set_host_valid(b);
+      else
+        set_device_valid(b);
+      diag();
+    }
+    mem_t() : vi(-1), tl(-1), rl(-1), host_valid(false), device_valid(false) {}
+    mem_t(int vi_,int rl_,int tl_,bool h,bool d) : vi(vi_), tl(tl_), rl(rl_), host_valid(h), device_valid(d) {}
+    int vi, tl, rl;
+  private:
     bool host_valid, device_valid;
+    /**
+     * Uncomment the line of code below to flood the output
+     * with diagnostics about when the mem_t structure is
+     * changed.
+     */
+    void diag() {
+      // std::cout << "mem_t:" << CCTK_VarName(vi) << ":rl=" << rl << ":tl=" << tl << " hd=" << host_valid << device_valid << std::endl;
+    }
   };
   
   class device_t {
     vector<vector<vector<mem_t> > > mems; // [vi][rl][tl]
-    void ensure_reflevel(const int vi, const int rl)
+    void ensure_reflevel(int vi, int rl)
     {
       // rl can be less than zero if this
       // routine is called at an inappropriate
@@ -106,8 +147,9 @@ namespace Accelerator {
     }
     void ensure_timelevel(int vi, int rl, int tl) {
       ensure_reflevel(vi, rl);
-      if(tl >= int(mems.at(vi).at(rl).size())) {
-        mems.at(vi).at(rl).resize(tl+1);
+      while(tl >= int(mems.at(vi).at(rl).size())) {
+        mem_t m(vi,rl,mems.at(vi).at(rl).size(),false,false);
+        mems.at(vi).at(rl).push_back(m);
       }
     }
     void create_timelevel(int vi, int rl, int tl, mem_t const& m)
@@ -116,12 +158,37 @@ namespace Accelerator {
       // We can only create the next missing timelevel
       assert(int(mems.at(vi).at(rl).size()) == tl);
       mems.at(vi).at(rl).resize(tl+1, m);
+      mem_t& mm = mems.at(vi).at(rl).at(tl);
+      mm.vi = vi;
+      mm.rl = rl;
+      mm.tl = tl;
+    }
+    bool has_mem(int vi,int rl,int tl)
+    {
+      if(mems.size() <= vi) return false;
+      if(mems.at(vi).size() <= rl) return false;
+      if(mems.at(vi).at(rl).size() <= tl) return false;
+      return true;
     }
     mem_t& mem(int vi, int rl, int tl)
     {
+      std::string vn = CCTK_VarName(vi);
       ensure_reflevel(vi, rl);
-      assert(tl < int(mems.at(vi).at(rl).size()));
-      return mems.at(vi).at(rl).at(tl);
+      assert(has_mem(vi,rl,tl));
+
+      mem_t& m = mems.at(vi).at(rl).at(tl);
+
+      // assert mem_t was properly initialized
+      assert(m.vi != -1);
+      assert(m.rl != -1);
+      assert(m.tl != -1);
+
+      // assert we have the mem_t structure we think we have
+      assert(m.vi == vi);
+      assert(m.rl == rl);
+      assert(m.tl == tl);
+
+      return m;
     }
   };
   
