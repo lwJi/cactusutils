@@ -1,6 +1,8 @@
 # Schedule definitions for thorn NaNCatcher
 
-SCHEDULE catch_nans AT startup
-{
-  LANG: C
-} "Disallow nans and infinities"
+if (catch_all_nans) {
+  SCHEDULE startup_catch_nans AT startup
+  {
+    LANG: C
+  } "Disallow nans and infinities"
+}

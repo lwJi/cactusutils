@@ -21,6 +21,8 @@ GNU or Intel, using <fpu_control.h>.
 PowerPC systems with a GNU compiler, using code taken from the GNU C
 library.
 
+Darwin (Apple) systems with an x86-64 processor.
+
 In cases where the nan-catcher does not work, you will see a warning
 message "NaNCatcher disabled -- no support for your compiler" early at
 run time.

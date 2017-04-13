@@ -14,12 +14,6 @@
 #define __GLIBC_PREREQ(a, b) 0
 #endif
 
-/*
- * Prototypes of the routines that are defined below.
- */
-int catch_nans(void);
-int no_catch_nans(void);
-
 #if __GLIBC__ >= 2 && __GLIBC_PREREQ(2, 2)
 
 /*
@@ -30,37 +24,31 @@ int no_catch_nans(void);
 
 #include <fenv.h>
 
-int catch_nans(void) {
-  if (-1 != feenableexcept(FE_DIVBYZERO | FE_OVERFLOW | FE_INVALID)) {
-    CCTK_INFO("NaNCatcher enabled");
-    return 0;
-  }
-
-  CCTK_WARN(1, "NaNCatcher disabled -- failed to enable traps");
-  return 0;
+void catch_nans(void) {
+  if (-1 != feenableexcept(FE_DIVBYZERO | FE_OVERFLOW | FE_INVALID))
+    CCTK_INFO("NaNCatcher enabled (via glibc feenableexcept)");
+  else
+    CCTK_WARN(CCTK_WARN_ALERT, "NaNCatcher disabled -- failed to enable traps");
 }
 
-int no_catch_nans(void) {
-  if (-1 != fedisableexcept(FE_DIVBYZERO | FE_OVERFLOW | FE_INVALID)) {
+void no_catch_nans(void) {
+  if (-1 != fedisableexcept(FE_DIVBYZERO | FE_OVERFLOW | FE_INVALID))
     CCTK_INFO("NaNCatcher disabled");
-    return 0;
-  }
-
-  CCTK_WARN(1, "NaNCatcher -- failed to disable traps");
-  return 0;
+  else
+    CCTK_WARN(CCTK_WARN_ALERT, "NaNCatcher -- failed to disable traps");
 }
 
-#elif (defined __linux__ && (defined __i386__ || defined __x86_64__) &&        \
-       (defined __GNUC__ || defined __INTEL_COMPILER))
+#elif defined __linux__ && (defined __i386__ || defined __x86_64__) &&         \
+    (defined __GNUC__ || defined __INTEL_COMPILER)
 
 /*
- * Here's an x86-only fallback for non-glibc systems that use the GNU
- * or Intel compilers.
+ * Here's a Linux x86-only fallback for non-glibc systems that use the
+ * GNU or Intel compilers.
  */
 
 #include <fpu_control.h>
 
-int catch_nans(void) {
+void catch_nans(void) {
   fpu_control_t cw;
 
   _FPU_GETCW(cw);
@@ -68,12 +56,10 @@ int catch_nans(void) {
   cw &= ~(_FPU_MASK_IM | _FPU_MASK_ZM | _FPU_MASK_OM);
   _FPU_SETCW(cw);
 
-  CCTK_INFO("NaNCatcher enabled");
-
-  return 0;
+  CCTK_INFO("NaNCatcher enabled (via _FPU_SETCW)");
 }
 
-int no_catch_nans(void) {
+void no_catch_nans(void) {
   fpu_control_t cw;
 
   _FPU_GETCW(cw);
@@ -83,8 +69,6 @@ int no_catch_nans(void) {
   _FPU_SETCW(cw);
 
   CCTK_INFO("NaNCatcher disabled");
-
-  return 0;
 }
 
 #elif defined(__ppc__) || defined(__ppc64__)
@@ -152,7 +136,7 @@ enum {
     asm volatile("mtfsf 0xff,%0" : : "f"(d));                                  \
   })
 
-int catch_nans(void) {
+void catch_nans(void) {
   fenv_union_t fe;
 
   fe.fenv = fegetenv_register();
@@ -161,12 +145,10 @@ int catch_nans(void) {
   fe.l[1] |= (1 << (31 - FPSCR_VE));
   fesetenv_register(fe.fenv);
 
-  CCTK_INFO("NaNCatcher enabled");
-
-  return 0;
+  CCTK_INFO("NaNCatcher enabled (via mtsf assembler instruction)");
 }
 
-int no_catch_nans(void) {
+void no_catch_nans(void) {
   fenv_union_t fe;
 
   fe.fenv = fegetenv_register();
@@ -176,8 +158,29 @@ int no_catch_nans(void) {
   fesetenv_register(fe.fenv);
 
   CCTK_INFO("NaNCatcher disabled");
+}
 
-  return 0;
+#elif defined __i386__ || defined __x86_64__
+
+/*
+ * Use x86-specific intrinsics
+ */
+
+/* TODO: Check -- this file might be called <intrin.h> on Intel compilers */
+#include <x86intrin.h>
+
+void catch_nans(void) {
+  _mm_setcsr(_mm_getcsr() & ~_MM_MASK_INVALID & ~_MM_MASK_DIV_ZERO &
+             ~_MM_MASK_OVERFLOW);
+
+  CCTK_INFO("NaNCatcher enabled (via _mm_setcsr)");
+}
+
+void no_catch_nans(void) {
+  _mm_setcsr(_mm_getcsr() | _MM_MASK_INVALID | _MM_MASK_DIV_ZERO |
+             _MM_MASK_OVERFLOW);
+
+  CCTK_INFO("NaNCatcher disabled");
 }
 
 #else
@@ -186,18 +189,24 @@ int no_catch_nans(void) {
  * Out of options now. Do nothing.
  */
 
-int catch_nans(void) {
-  CCTK_WARN(CCTK_WARN_ALERT,
-            "NaNCatcher disabled -- no support for your compiler");
-
-  return 0;
+void catch_nans(void) {
+  CCTK_WARN(
+      CCTK_WARN_ALERT,
+      "NaNCatcher disabled -- no support for your architecture and compiler");
 }
 
-int no_catch_nans(void) {
-  CCTK_WARN(CCTK_WARN_ALERT,
-            "NaNCatcher disabled -- no support for your compiler");
-
-  return 0;
+void no_catch_nans(void) {
+  CCTK_WARN(
+      CCTK_WARN_ALERT,
+      "NaNCatcher disabled -- no support for your architecture and compiler");
 }
 
 #endif
+
+/*
+ * Scheduled routine.
+ */
+int startup_catch_nans(void) {
+  catch_nans();
+  return 0;
+}

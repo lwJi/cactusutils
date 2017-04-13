@@ -1,3 +1,9 @@
 # Interface definition for thorn NaNCatcher
 
 IMPLEMENTS: NaNCatcher
+
+void FUNCTION FloatingPointExceptionsEnable()
+PROVIDES FUNCTION FloatingPointExceptionsEnable WITH catch_nans LANGUAGE C
+
+void FUNCTION FloatingPointExceptionsDisable()
+PROVIDES FUNCTION FloatingPointExceptionsDisable WITH no_catch_nans LANGUAGE C
