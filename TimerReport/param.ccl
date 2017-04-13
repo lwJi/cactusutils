@@ -43,6 +43,10 @@ BOOLEAN output_all_timers_together "Output three files (formats .txt, .csv, and 
 {
 } "no"
 
+BOOLEAN output_all_timers_per_iteration "Output three files (formats .txt, .csv, and .tsv) for each iteration, containing information about all the Cactus timers (average, minimum, and maximum over all processors)" STEERABLE=ALWAYS
+{
+} "no"
+
 BOOLEAN output_all_timers_readable "Output one file containing information about all the Cactus timers (average, minimum, and maximum over all processors), in a format that is readable by humans" STEERABLE=ALWAYS
 {
 } "no"
@@ -57,6 +61,11 @@ INT n_top_timers "How many timers to include in the top timer report" STEERABLE=
   0   :: "Do not print the report"
   1:* :: "Any number of timers"
 } 0
+
+STRING top_timers_clock "Which clock to use for the top timers output" STEERABLE=ALWAYS
+{
+  ".*"   :: "any clock name allowed, or empty for all clocks"
+} "gettimeofday"
 
 shares: IO
 

@@ -51,6 +51,7 @@ void Output(CCTK_ARGUMENTS);
 void PrintTimes(CCTK_ARGUMENTS);
 void OutputAllTimers(CCTK_ARGUMENTS);
 void OutputAllTimersTogether(CCTK_ARGUMENTS);
+void OutputAllTimersPerIteration(CCTK_ARGUMENTS);
 void OutputAllTimersReadable(CCTK_ARGUMENTS);
 void PrintTopTimers(CCTK_ARGUMENTS);
 
@@ -160,6 +161,10 @@ void Output(CCTK_ARGUMENTS) {
 
   if (output_all_timers_together) {
     OutputAllTimersTogether(CCTK_PASS_CTOC);
+  }
+
+  if (output_all_timers_per_iteration) {
+    OutputAllTimersPerIteration(CCTK_PASS_CTOC);
   }
 
   if (output_all_timers_readable) {
@@ -388,6 +393,66 @@ void OutputAllTimersTogether(CCTK_ARGUMENTS) {
   } // if root processor
 }
 
+void OutputAllTimersPerIteration(CCTK_ARGUMENTS) {
+  DECLARE_CCTK_ARGUMENTS;
+  DECLARE_CCTK_PARAMETERS;
+
+  timer_stats timers;
+  if (!CollectTimerInfo(cctkGH, timers))
+    return;
+
+  if (CCTK_MyProc(cctkGH) == 0) {
+    ostringstream filename_buf, filename_csv_buf, filename_tsv_buf;
+    filename_buf << out_dir << "/"
+                 << "AllTimers"
+                 << ".it" << setw(10) << setfill('0') << cctk_iteration
+                 << ".txt";
+    filename_csv_buf << out_dir << "/"
+                     << "AllTimers"
+                     << ".it" << setw(10) << setfill('0') << cctk_iteration
+                     << ".csv";
+    filename_tsv_buf << out_dir << "/"
+                     << "AllTimers"
+                     << ".it" << setw(10) << setfill('0') << cctk_iteration
+                     << ".tsv";
+    string filename = filename_buf.str();
+    string filename_csv = filename_csv_buf.str();
+    string filename_tsv = filename_tsv_buf.str();
+
+    FILE *file = fopen(filename.c_str(), "w");
+    FILE *file_csv = fopen(filename_csv.c_str(), "w");
+    FILE *file_tsv = fopen(filename_tsv.c_str(), "w");
+    if (file) {
+      fprintf(file, "# Iteration: %d\n", cctk_iteration);
+      fprintf(file, "# Simulation time: %.15g\n", double(cctk_time));
+      fprintf(file, "#\n");
+      fprintf(file, "# Column 1: timer name\n");
+      fprintf(file, "# Column 2: average of all processes\n");
+      fprintf(file, "# Column 3: minimum of all processes\n");
+      fprintf(file, "# Column 4: maximum of all processes\n");
+      for (int i = 0; i < timers.ntimers(); i++) {
+        fprintf(file, "%s %.15g %.15g %.15g\n", timers.names[i].c_str(),
+                double(timers.secs_avg[i]), double(timers.secs_min[i]),
+                double(timers.secs_max[i]));
+        fprintf(file_csv, "%s,%.15g,%.15g,%.15g\n",
+                QuoteForCSV(timers.names[i]), double(timers.secs_avg[i]),
+                double(timers.secs_min[i]), double(timers.secs_max[i]));
+        fprintf(file_tsv, "%s\t%.15g\t%.15g\t%.15g\n",
+                QuoteForTSV(timers.names[i]), double(timers.secs_avg[i]),
+                double(timers.secs_min[i]), double(timers.secs_max[i]));
+      }
+      fclose(file);
+      fclose(file_csv);
+      fclose(file_tsv);
+    } else {
+      CCTK_VWARN(
+          CCTK_WARN_ALERT,
+          "Could not open timer report output files \"%s\", \"%s\", and \"%s\"",
+          filename.c_str(), filename_csv.c_str(), filename_tsv.c_str());
+    }
+  } // if root processor
+}
+
 void OutputAllTimersReadable(CCTK_ARGUMENTS) {
   DECLARE_CCTK_ARGUMENTS;
   DECLARE_CCTK_PARAMETERS;
@@ -521,24 +586,42 @@ int CollectTimerInfo(const cGH *restrict cctkGH, timer_stats &timers) {
     const char *timername = CCTK_TimerName(n);
     int ierr = CCTK_TimerI(n, td);
     assert(!ierr);
-    // This function is misnamed; it returns the number of values, not
-    // the number of clocks. (A clock can have multiple values.)
-    int my_nvalues = CCTK_NumTimerClocks(td);
-    assert(my_nvalues >= 0);
-    assert(my_nvalues > 0);
+    if (*top_timers_clock == '\0') {
+      // This function is misnamed; it returns the number of values, not the
+      // number of clocks. (A clock can have multiple values.)
+      int my_nvalues = CCTK_NumTimerClocks(td);
+      assert(my_nvalues >= 0);
+      assert(my_nvalues > 0);
 
-    for (int v = 0; v < my_nvalues; ++v) {
-      const cTimerVal *tv = CCTK_GetClockValueI(v, td);
+      for (int v = 0; v < my_nvalues; ++v) {
+        const cTimerVal *tv = CCTK_GetClockValueI(v, td);
+        if (tv) {
+          const char *clockname = CCTK_TimerClockName(tv);
+
+          ostringstream buf;
+          if (timername)
+            buf << timername;
+          else
+            buf << "DESTROYED TIMER #" << n;
+          assert(clockname);
+          buf << " [" << clockname << "]";
+          timervaluename_t tvn;
+          snprintf(&tvn[0], TIMERVALUENAME_LENGTH, "%s", buf.str().c_str());
+          my_timervaluenames.push_back(tvn);
+
+          double val = CCTK_TimerClockSeconds(tv);
+          my_timervalues.push_back(val);
+        }
+      }
+    } else {
+      const cTimerVal *tv = CCTK_GetClockValue(top_timers_clock, td);
       if (tv) {
-        const char *clockname = CCTK_TimerClockName(tv);
-
         ostringstream buf;
         if (timername)
           buf << timername;
         else
           buf << "DESTROYED TIMER #" << n;
-        assert(clockname);
-        buf << " [" << clockname << "]";
+        buf << " [" << top_timers_clock << "]";
         timervaluename_t tvn;
         snprintf(&tvn[0], TIMERVALUENAME_LENGTH, "%s", buf.str().c_str());
         my_timervaluenames.push_back(tvn);
@@ -688,11 +771,10 @@ string QuoteForTSV(const string &str) {
   // Copy string into result, replacing tabs as necessary
   for (string::const_iterator it = str.begin(); it != str.end(); ++it) {
     char ch = *it;
-    if (ch == '\t') {
+    if (ch == '\t')
       buf << ' ';
-    } else {
+    else
       buf << ch;
-    }
   }
   return buf.str();
 }
