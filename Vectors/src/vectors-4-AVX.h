@@ -79,6 +79,20 @@ vec4_seti(CCTK_INTEGER4 const a, CCTK_INTEGER4 const b, CCTK_INTEGER4 const c,
   return _mm256_set_epi32(h, g, f, e, d, c, b, a); // note reversed arguments
 }
 
+// original order is 01234567
+static inline CCTK_ATTRIBUTE_ALWAYS_INLINE CCTK_REAL4_VEC
+vec4_swap10325476(CCTK_REAL4_VEC const x) {
+  return _mm256_shuffle_ps(x, x, 0b10110001);
+}
+static inline CCTK_ATTRIBUTE_ALWAYS_INLINE CCTK_REAL4_VEC
+vec4_swap23016745(CCTK_REAL4_VEC const x) {
+  return _mm256_shuffle_ps(x, x, 0b01001110);
+}
+static inline CCTK_ATTRIBUTE_ALWAYS_INLINE CCTK_REAL4_VEC
+vec4_swap45670123(CCTK_REAL4_VEC const x) {
+  return _mm256_permute2f128_ps(x, x, 1);
+}
+
 static inline CCTK_ATTRIBUTE_ALWAYS_INLINE CCTK_REAL4
 vec4_elt(CCTK_REAL4_VEC const x, std::ptrdiff_t const d) {
   CCTK_REAL4 e;
@@ -641,6 +655,50 @@ k4sgn(CCTK_REAL4_VEC const x) {
   CCTK_REAL4_VEC const sign = _mm256_and_ps(I2R(k4sign), x);
   CCTK_REAL4_VEC const signedone = _mm256_or_ps(sign, vec4_set1(1.0));
   return k4ifthen(iszero, vec4_set1(0.0), signedone);
+}
+
+// Reduction operations
+
+static inline CCTK_ATTRIBUTE_ALWAYS_INLINE bool
+k4all(CCTK_BOOLEAN4_VEC const x) {
+  CCTK_REAL4_VEC const x1 = I2R(x);
+  CCTK_REAL4_VEC const x2 = _mm256_and_ps(x1, vec4_swap10325476(x1));
+  CCTK_REAL4_VEC const x4 = _mm256_and_ps(x2, vec4_swap23016745(x2));
+  CCTK_REAL4_VEC const x8 = _mm256_and_ps(x4, vec4_swap45670123(x4));
+  return vec4_eltb(R2I(x8), 0)<0;
+}
+
+static inline CCTK_ATTRIBUTE_ALWAYS_INLINE bool
+k4any(CCTK_BOOLEAN4_VEC const x) {
+  CCTK_REAL4_VEC const x1 = I2R(x);
+  CCTK_REAL4_VEC const x2 = _mm256_or_ps(x1, vec4_swap10325476(x1));
+  CCTK_REAL4_VEC const x4 = _mm256_or_ps(x2, vec4_swap23016745(x2));
+  CCTK_REAL4_VEC const x8 = _mm256_or_ps(x4, vec4_swap45670123(x4));
+  return vec4_eltb(R2I(x8), 0)<0;
+}
+
+static inline CCTK_ATTRIBUTE_ALWAYS_INLINE CCTK_REAL4
+k4maximum(CCTK_REAL4_VEC const x1) {
+  CCTK_REAL4_VEC const x2 = _mm256_max_ps(x1, vec4_swap10325476(x1));
+  CCTK_REAL4_VEC const x4 = _mm256_max_ps(x2, vec4_swap23016745(x2));
+  CCTK_REAL4_VEC const x8 = _mm256_max_ps(x4, vec4_swap45670123(x4));
+  return vec4_elt(x8, 0);
+}
+
+static inline CCTK_ATTRIBUTE_ALWAYS_INLINE CCTK_REAL4
+k4minimum(CCTK_REAL4_VEC const x1) {
+  CCTK_REAL4_VEC const x2 = _mm256_min_ps(x1, vec4_swap10325476(x1));
+  CCTK_REAL4_VEC const x4 = _mm256_min_ps(x2, vec4_swap23016745(x2));
+  CCTK_REAL4_VEC const x8 = _mm256_min_ps(x4, vec4_swap45670123(x4));
+  return vec4_elt(x8, 0);
+}
+
+static inline CCTK_ATTRIBUTE_ALWAYS_INLINE CCTK_REAL4
+k4sum(CCTK_REAL4_VEC const x1) {
+  CCTK_REAL4_VEC const x2 = _mm256_hadd_ps(x1, x1);
+  CCTK_REAL4_VEC const x4 = _mm256_hadd_ps(x2, x2);
+  CCTK_REAL4_VEC const x8 = _mm256_add_ps(x4, vec4_swap45670123(x4));
+  return vec4_elt(x8, 0);
 }
 
 #undef I2R

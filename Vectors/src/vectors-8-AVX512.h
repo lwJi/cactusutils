@@ -214,7 +214,27 @@ k8mul(CCTK_REAL8_VEC const x, CCTK_REAL8_VEC const y) {
 }
 static inline CCTK_ATTRIBUTE_ALWAYS_INLINE CCTK_REAL8_VEC
 k8div(CCTK_REAL8_VEC const x, CCTK_REAL8_VEC const y) {
-  return _mm512_div_pd(x, y);
+// This is more accurate, but also slower
+// return _mm512_div_pd(x, y);
+#if 0
+  // Approximate solution
+  CCTK_REAL8_VEC const r0 = _mm512_mul_pd(x, _mm512_rcp28_pd(y));
+  // One Newton iteration
+  // Note: Don't rewrite this expression, this may introduce
+  // cancellation errors
+  // r += r * (x - y * r)
+  CCTK_REAL8_VEC const r1 = _mm512_fmadd_pd(r0, _mm512_fnmadd_pd(y, r0, x), r0);
+  return r1;
+#endif
+  // Approximate solution
+  CCTK_REAL8_VEC const r0 = _mm512_rcp28_pd(y);
+  // One Newton iteration
+  // Note: Don't rewrite this expression, this may introduce
+  // cancellation errors
+  // r += r * (1 - y * r)
+  CCTK_REAL8_VEC const r1 =
+      _mm512_fmadd_pd(r0, _mm512_fnmadd_pd(y, r0, vec8_set1(1.0)), r0);
+  return _mm512_mul_pd(x, r1);
 }
 
 // Fused multiply-add, defined as [+-]x*y[+-]z
@@ -273,7 +293,19 @@ k8signbit(CCTK_REAL8_VEC const x) {
 }
 static inline CCTK_ATTRIBUTE_ALWAYS_INLINE CCTK_REAL8_VEC
 k8sqrt(CCTK_REAL8_VEC const x) {
-  return _mm512_sqrt_pd(x);
+  // This is more accurate, but also slower
+  // return _mm512_sqrt_pd(x);
+  // One Goldschmidt iteration
+  // (<https://en.wikipedia.org/wiki/Methods_of_computing_square_roots>)
+  // Initialisation
+  CCTK_REAL8_VEC const y0 = _mm512_rsqrt28_pd(x);
+  CCTK_REAL8_VEC const x0 = _mm512_mul_pd(x, y0);
+  CCTK_REAL8_VEC const h0 = _mm512_mul_pd(vec8_set1(0.5), y0);
+  // Step
+  CCTK_REAL8_VEC const r0 = _mm512_fnmadd_pd(x0, h0, vec8_set1(0.5));
+  CCTK_REAL8_VEC const x1 = _mm512_fmadd_pd(x0, r0, x0);
+  // CCTK_REAL8_VEC const h1 = _mm512_fmadd_pd(h0, r0, h0);
+  return x1;
 }
 
 // Expensive functions
@@ -502,4 +534,45 @@ k8sgn(CCTK_REAL8_VEC const x) {
   CCTK_BOOLEAN8_VEC const isneg = k8cmplt(x, vec8_set1(0.0));
   return k8ifthen(iszero, vec8_set1(0.0),
                   k8ifthen(isneg, vec8_set1(-1.0), vec8_set1(+1.0)));
+}
+
+// Reduction operations
+
+static inline CCTK_ATTRIBUTE_ALWAYS_INLINE bool
+k8all(CCTK_BOOLEAN8_VEC const x) {
+  // return mm512_kortestc(x, x);
+  return x == 0b11111111;
+}
+
+static inline CCTK_ATTRIBUTE_ALWAYS_INLINE bool
+k8any(CCTK_BOOLEAN8_VEC const x) {
+  // return !bool(_mm512_kortestz(x, x));
+  return x != 0b00000000;
+}
+
+static inline CCTK_ATTRIBUTE_ALWAYS_INLINE CCTK_REAL8
+k8maximum(CCTK_REAL8_VEC const x1) {
+  __m256d const x2 =
+      _mm256_max_pd(_mm512_castpd512_pd256(x1), _mm512_extractf64x4_pd(x1, 1));
+  __m128d const x4 =
+      _mm_max_pd(_mm256_castpd256_pd128(x2), _mm256_extractf128_pd(x2, 1));
+  return _mm_cvtsd_f64(_mm_max_sd(x4, _mm_shuffle_pd(x4, x4, 0b01)));
+}
+
+static inline CCTK_ATTRIBUTE_ALWAYS_INLINE CCTK_REAL8
+k8minimum(CCTK_REAL8_VEC const x1) {
+  __m256d const x2 =
+      _mm256_min_pd(_mm512_castpd512_pd256(x1), _mm512_extractf64x4_pd(x1, 1));
+  __m128d const x4 =
+      _mm_min_pd(_mm256_castpd256_pd128(x2), _mm256_extractf128_pd(x2, 1));
+  return _mm_cvtsd_f64(_mm_min_sd(x4, _mm_shuffle_pd(x4, x4, 0b01)));
+}
+
+static inline CCTK_ATTRIBUTE_ALWAYS_INLINE CCTK_REAL8
+k8sum(CCTK_REAL8_VEC const x1) {
+  __m256d const x2 =
+      _mm256_add_pd(_mm512_castpd512_pd256(x1), _mm512_extractf64x4_pd(x1, 1));
+  __m128d const x4 =
+      _mm_add_pd(_mm256_castpd256_pd128(x2), _mm256_extractf128_pd(x2, 1));
+  return _mm_cvtsd_f64(_mm_hadd_pd(x4, x4));
 }

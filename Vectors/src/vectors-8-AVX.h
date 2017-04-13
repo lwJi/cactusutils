@@ -77,6 +77,16 @@ vec8_seti(CCTK_INTEGER8 const a, CCTK_INTEGER8 const b, CCTK_INTEGER8 const c,
   return _mm256_set_epi64x(d, c, b, a); // note reversed arguments
 }
 
+// original order is 0123
+static inline CCTK_ATTRIBUTE_ALWAYS_INLINE CCTK_REAL8_VEC
+vec8_swap1032(CCTK_REAL8_VEC const x) {
+  return _mm256_shuffle_pd(x, x, 0b0101);
+}
+static inline CCTK_ATTRIBUTE_ALWAYS_INLINE CCTK_REAL8_VEC
+vec8_swap2301(CCTK_REAL8_VEC const x) {
+  return _mm256_permute2f128_pd(x, x, 1);
+}
+
 static inline CCTK_ATTRIBUTE_ALWAYS_INLINE CCTK_REAL8
 vec8_elt(CCTK_REAL8_VEC const x, std::ptrdiff_t const d) {
   CCTK_REAL8 e;
@@ -628,6 +638,45 @@ k8sgn(CCTK_REAL8_VEC const x) {
   CCTK_REAL8_VEC const sign = _mm256_and_pd(I2R(k8sign), x);
   CCTK_REAL8_VEC const signedone = _mm256_or_pd(sign, vec8_set1(1.0));
   return k8ifthen(iszero, vec8_set1(0.0), signedone);
+}
+
+// Reduction operations
+
+static inline CCTK_ATTRIBUTE_ALWAYS_INLINE bool
+k8all(CCTK_BOOLEAN8_VEC const x) {
+  CCTK_REAL8_VEC const x1 = I2R(x);
+  CCTK_REAL8_VEC const x2 = _mm256_and_pd(x1, vec8_swap1032(x1));
+  CCTK_REAL8_VEC const x4 = _mm256_and_pd(x2, vec8_swap2301(x2));
+  return vec8_eltb(R2I(x4), 0)<0;
+}
+
+static inline CCTK_ATTRIBUTE_ALWAYS_INLINE bool
+k8any(CCTK_BOOLEAN8_VEC const x) {
+  CCTK_REAL8_VEC const x1 = I2R(x);
+  CCTK_REAL8_VEC const x2 = _mm256_or_pd(x1, vec8_swap1032(x1));
+  CCTK_REAL8_VEC const x4 = _mm256_or_pd(x2, vec8_swap2301(x2));
+  return vec8_eltb(R2I(x4), 0)<0;
+}
+
+static inline CCTK_ATTRIBUTE_ALWAYS_INLINE CCTK_REAL8
+k8maximum(CCTK_REAL8_VEC const x1) {
+  CCTK_REAL8_VEC const x2 = _mm256_max_pd(x1, vec8_swap1032(x1));
+  CCTK_REAL8_VEC const x4 = _mm256_max_pd(x2, vec8_swap2301(x2));
+  return vec8_elt(x4, 0);
+}
+
+static inline CCTK_ATTRIBUTE_ALWAYS_INLINE CCTK_REAL8
+k8minimum(CCTK_REAL8_VEC const x1) {
+  CCTK_REAL8_VEC const x2 = _mm256_min_pd(x1, vec8_swap1032(x1));
+  CCTK_REAL8_VEC const x4 = _mm256_min_pd(x2, vec8_swap2301(x2));
+  return vec8_elt(x4, 0);
+}
+
+static inline CCTK_ATTRIBUTE_ALWAYS_INLINE CCTK_REAL8
+k8sum(CCTK_REAL8_VEC const x1) {
+  CCTK_REAL8_VEC const x2 = _mm256_hadd_pd(x1, x1);
+  CCTK_REAL8_VEC const x4 = _mm256_add_pd(x2, vec8_swap2301(x2));
+  return vec8_elt(x4, 0);
 }
 
 #undef I2R
