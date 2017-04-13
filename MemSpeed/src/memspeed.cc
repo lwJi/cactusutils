@@ -73,11 +73,20 @@ int MPI_Reduce(void *sendbuf, void *recvbuf, int count, MPI_Datatype datatype,
 namespace {
 int omp_get_thread_num() { return 0; }
 int omp_get_max_threads() { return 1; }
+#if 0
 // Fall back to gettimeofday if OpenMP is not available
 double omp_get_wtime() {
   timeval tv;
   gettimeofday(&tv, NULL);
   return tv.tv_sec + 1.0e-6 * tv.tv_usec;
+}
+#endif
+// Fall back to clock_gettime if OpenMP is not available
+#include <time.h>
+double omp_get_wtime() {
+  timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  return ts.tv_sec + 1.0e-9 * ts.tv_nsec;
 }
 }
 #endif
