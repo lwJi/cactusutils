@@ -152,6 +152,8 @@ $(TARBALL_DIR)/config-Cactus.files: $(CCTK_LIBDIR)/$(LIBNAME_PREFIX)$(CCTK_LIBNA
 		-name '.svn' -prune -o \
 		-name '*.log' -prune -o \
 		-name '*.log.gz' -prune -o \
+		-name '*.tar' -prune -o \
+		-name '*.tar.*' -prune -o \
 		-name '.?*' -prune -o \
 		-name '*~' -prune -o \
 		! -type d \
@@ -212,6 +214,8 @@ $(TARBALL_DIR)/flesh-Cactus.files: $(CCTK_LIBDIR)/$(LIBNAME_PREFIX)$(CCTK_LIBNAM
 		-name '.svn' -prune -o \
 		-name '*.log' -prune -o \
 		-name '*.log.gz' -prune -o \
+		-name '*.tar' -prune -o \
+		-name '*.tar.*' -prune -o \
 		-name '.?*' -prune -o \
 		-name '*~' -prune -o \
 		! -type d \
@@ -271,6 +275,8 @@ $(TARBALL_DIR)/thorn-%.files: $(CCTK_LIBDIR)/$(LIBNAME_PREFIX)$(CCTK_LIBNAME_PRE
 		-name 'CVS' -prune -o \
 		-name '*.log' -prune -o \
 		-name '*.log.gz' -prune -o \
+		-name '*.tar' -prune -o \
+		-name '*.tar.*' -prune -o \
 		-name '.?*' -prune -o \
 		-name '*~' -prune -o \
 		! -type d \
