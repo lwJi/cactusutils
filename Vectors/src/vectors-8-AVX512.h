@@ -227,6 +227,7 @@ k8div(CCTK_REAL8_VEC const x, CCTK_REAL8_VEC const y) {
   return r1;
 #endif
   // Approximate solution
+#if defined __knl__
   CCTK_REAL8_VEC const r0 = _mm512_rcp28_pd(y);
   // One Newton iteration
   // Note: Don't rewrite this expression, this may introduce
@@ -235,6 +236,15 @@ k8div(CCTK_REAL8_VEC const x, CCTK_REAL8_VEC const y) {
   CCTK_REAL8_VEC const r1 =
       _mm512_fmadd_pd(r0, _mm512_fnmadd_pd(y, r0, vec8_set1(1.0)), r0);
   return _mm512_mul_pd(x, r1);
+#else
+  CCTK_REAL8_VEC const r0 = _mm512_rcp14_pd(y);
+  // Two Newton iterations
+  CCTK_REAL8_VEC const r1 =
+      _mm512_fmadd_pd(r0, _mm512_fnmadd_pd(y, r0, vec8_set1(1.0)), r0);
+  CCTK_REAL8_VEC const r2 =
+      _mm512_fmadd_pd(r1, _mm512_fnmadd_pd(y, r1, vec8_set1(1.0)), r1);
+  return _mm512_mul_pd(x, r2);
+#endif
 }
 
 // Fused multiply-add, defined as [+-]x*y[+-]z
@@ -295,8 +305,9 @@ static inline CCTK_ATTRIBUTE_ALWAYS_INLINE CCTK_REAL8_VEC
 k8sqrt(CCTK_REAL8_VEC const x) {
   // This is more accurate, but also slower
   // return _mm512_sqrt_pd(x);
-  // One Goldschmidt iteration
+  // Goldschmidt iterations
   // (<https://en.wikipedia.org/wiki/Methods_of_computing_square_roots>)
+#if defined __knl__
   // Initialisation
   CCTK_REAL8_VEC const y0 = _mm512_rsqrt28_pd(x);
   CCTK_REAL8_VEC const x0 = _mm512_mul_pd(x, y0);
@@ -306,6 +317,21 @@ k8sqrt(CCTK_REAL8_VEC const x) {
   CCTK_REAL8_VEC const x1 = _mm512_fmadd_pd(x0, r0, x0);
   // CCTK_REAL8_VEC const h1 = _mm512_fmadd_pd(h0, r0, h0);
   return x1;
+#else
+  // Initialisation
+  CCTK_REAL8_VEC const y0 = _mm512_rsqrt14_pd(x);
+  CCTK_REAL8_VEC const x0 = _mm512_mul_pd(x, y0);
+  CCTK_REAL8_VEC const h0 = _mm512_mul_pd(vec8_set1(0.5), y0);
+  // Step
+  CCTK_REAL8_VEC const r0 = _mm512_fnmadd_pd(x0, h0, vec8_set1(0.5));
+  CCTK_REAL8_VEC const x1 = _mm512_fmadd_pd(x0, r0, x0);
+  CCTK_REAL8_VEC const h1 = _mm512_fmadd_pd(h0, r0, h0);
+  // Step
+  CCTK_REAL8_VEC const r1 = _mm512_fnmadd_pd(x1, h1, vec8_set1(0.5));
+  CCTK_REAL8_VEC const x2 = _mm512_fmadd_pd(x1, r1, x1);
+  // CCTK_REAL8_VEC const h2 = _mm512_fmadd_pd(h1, r1, h1);
+  return x2;
+#endif
 }
 
 // Expensive functions
@@ -383,6 +409,10 @@ k8pow(CCTK_REAL8_VEC const x, CCTK_REAL8 const a) {
   return _mm512_pow_pd(x, _mm512_set1_pd(a));
 }
 static inline CCTK_ATTRIBUTE_ALWAYS_INLINE CCTK_REAL8_VEC
+k8pown(CCTK_REAL8_VEC const x, int const i) {
+  return _mm512_pow_pd(x, _mm512_set1_pd(CCTK_REAL8(i)));
+}
+static inline CCTK_ATTRIBUTE_ALWAYS_INLINE CCTK_REAL8_VEC
 k8sin(CCTK_REAL8_VEC const x) {
   return _mm512_sin_pd(x);
 }
@@ -452,6 +482,22 @@ k8log(CCTK_REAL8_VEC const x) {
 static inline CCTK_ATTRIBUTE_ALWAYS_INLINE CCTK_REAL8_VEC
 k8pow(CCTK_REAL8_VEC const x, CCTK_REAL8 const a) {
   return K8REPL2S(pow, x, a);
+}
+static inline CCTK_ATTRIBUTE_ALWAYS_INLINE CCTK_REAL8_VEC
+k8pown(CCTK_REAL8_VEC x, int i) {
+  // return k8repl2si(pow, x, i);
+  if (i < 0) {
+    x = k8div(vec8_set1(1), x);
+    i = -i;
+  }
+  CCTK_REAL8_VEC r = vec8_set1(1);
+  while (i != 0) {
+    if (i & 1)
+      r = k8mul(x, r);
+    x = k8mul(x, x);
+    i >>= 1;
+  }
+  return r;
 }
 static inline CCTK_ATTRIBUTE_ALWAYS_INLINE CCTK_REAL8_VEC
 k8sin(CCTK_REAL8_VEC const x) {
