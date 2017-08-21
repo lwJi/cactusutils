@@ -665,7 +665,7 @@ k4all(CCTK_BOOLEAN4_VEC const x) {
   CCTK_REAL4_VEC const x2 = _mm256_and_ps(x1, vec4_swap10325476(x1));
   CCTK_REAL4_VEC const x4 = _mm256_and_ps(x2, vec4_swap23016745(x2));
   CCTK_REAL4_VEC const x8 = _mm256_and_ps(x4, vec4_swap45670123(x4));
-  return vec4_eltb(R2I(x8), 0)<0;
+  return vec4_eltb(R2I(x8), 0) < 0;
 }
 
 static inline CCTK_ATTRIBUTE_ALWAYS_INLINE bool
@@ -674,7 +674,7 @@ k4any(CCTK_BOOLEAN4_VEC const x) {
   CCTK_REAL4_VEC const x2 = _mm256_or_ps(x1, vec4_swap10325476(x1));
   CCTK_REAL4_VEC const x4 = _mm256_or_ps(x2, vec4_swap23016745(x2));
   CCTK_REAL4_VEC const x8 = _mm256_or_ps(x4, vec4_swap45670123(x4));
-  return vec4_eltb(R2I(x8), 0)<0;
+  return vec4_eltb(R2I(x8), 0) < 0;
 }
 
 static inline CCTK_ATTRIBUTE_ALWAYS_INLINE CCTK_REAL4

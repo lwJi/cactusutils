@@ -226,7 +226,7 @@ k8div(CCTK_REAL8_VEC const x, CCTK_REAL8_VEC const y) {
   CCTK_REAL8_VEC const r1 = _mm512_fmadd_pd(r0, _mm512_fnmadd_pd(y, r0, x), r0);
   return r1;
 #endif
-  // Approximate solution
+// Approximate solution
 #if defined __knl__
   CCTK_REAL8_VEC const r0 = _mm512_rcp28_pd(y);
   // One Newton iteration
@@ -303,10 +303,10 @@ k8signbit(CCTK_REAL8_VEC const x) {
 }
 static inline CCTK_ATTRIBUTE_ALWAYS_INLINE CCTK_REAL8_VEC
 k8sqrt(CCTK_REAL8_VEC const x) {
-  // This is more accurate, but also slower
-  // return _mm512_sqrt_pd(x);
-  // Goldschmidt iterations
-  // (<https://en.wikipedia.org/wiki/Methods_of_computing_square_roots>)
+// This is more accurate, but also slower
+// return _mm512_sqrt_pd(x);
+// Goldschmidt iterations
+// (<https://en.wikipedia.org/wiki/Methods_of_computing_square_roots>)
 #if defined __knl__
   // Initialisation
   CCTK_REAL8_VEC const y0 = _mm512_rsqrt28_pd(x);
