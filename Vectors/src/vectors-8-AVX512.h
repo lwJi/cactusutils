@@ -122,15 +122,16 @@ vec8_storeu(CCTK_REAL8 &p, CCTK_REAL8_VEC const x) {
 static inline CCTK_ATTRIBUTE_ALWAYS_INLINE void
 vec8_store_nta(CCTK_REAL8 &p, CCTK_REAL8_VEC const x) {
 #if 0 && VECTORISE_STREAMING_STORES
+  // Possible implementations when using streaming stores include:
   // non-temporal hint:
-  // _mm512_extstore_pd(&p, x, _MM_DOWNCONV_PD_NONE, _MM_HINT_NT);
+  //   _mm512_extstore_pd(&p, x, _MM_DOWNCONV_PD_NONE, _MM_HINT_NT);
   // no-read hint:
-  _mm512_storenr_pd(&p, x);
-  _mm_clevict(&p, _MM_HINT_T1);
-// no-read hint, not globally ordered (requires fence?):
-// _mm512_storenrngo_pd(&p, x);
-// _mm_clevict(&p, _MM_HINT_T1);
-
+  //   _mm512_storenr_pd(&p, x);
+  //   _mm_clevict(&p, _MM_HINT_T1);
+  // no-read hint, not globally ordered (requires fence?):
+  //   _mm512_storenrngo_pd(&p, x);
+  //   _mm_clevict(&p, _MM_HINT_T1);
+  // However, these all seem slower, so we don't use streaming stores.
 #else
   _mm512_store_pd(&p, x);
 #endif
@@ -214,9 +215,12 @@ k8mul(CCTK_REAL8_VEC const x, CCTK_REAL8_VEC const y) {
 }
 static inline CCTK_ATTRIBUTE_ALWAYS_INLINE CCTK_REAL8_VEC
 k8div(CCTK_REAL8_VEC const x, CCTK_REAL8_VEC const y) {
-// This is more accurate, but also slower
-// return _mm512_div_pd(x, y);
 #if 0
+  // This is accurate, but slow; it is internally evaluated unvectorized
+  return _mm512_div_pd(x, y);
+#endif
+#if 0
+  // Starting from a reciprocal is facter, but leads to some round-off error
   // Approximate solution
   CCTK_REAL8_VEC const r0 = _mm512_mul_pd(x, _mm512_rcp28_pd(y));
   // One Newton iteration
@@ -226,8 +230,10 @@ k8div(CCTK_REAL8_VEC const x, CCTK_REAL8_VEC const y) {
   CCTK_REAL8_VEC const r1 = _mm512_fmadd_pd(r0, _mm512_fnmadd_pd(y, r0, x), r0);
   return r1;
 #endif
-// Approximate solution
 #if defined __knl__
+  // Best algorithm: Start with an approximate result, then perform Newton
+  // iteration until convergence. Theoretically the result should be exact.
+  // Approximate solution
   CCTK_REAL8_VEC const r0 = _mm512_rcp28_pd(y);
   // One Newton iteration
   // Note: Don't rewrite this expression, this may introduce
@@ -237,6 +243,9 @@ k8div(CCTK_REAL8_VEC const x, CCTK_REAL8_VEC const y) {
       _mm512_fmadd_pd(r0, _mm512_fnmadd_pd(y, r0, vec8_set1(1.0)), r0);
   return _mm512_mul_pd(x, r1);
 #else
+  // Best algorithm: Start with an approximate result, then perform Newton
+  // iteration until convergence. Theoretically the result should be exact.
+  // Approximate solution
   CCTK_REAL8_VEC const r0 = _mm512_rcp14_pd(y);
   // Two Newton iterations
   CCTK_REAL8_VEC const r1 =
@@ -303,11 +312,14 @@ k8signbit(CCTK_REAL8_VEC const x) {
 }
 static inline CCTK_ATTRIBUTE_ALWAYS_INLINE CCTK_REAL8_VEC
 k8sqrt(CCTK_REAL8_VEC const x) {
-// This is more accurate, but also slower
-// return _mm512_sqrt_pd(x);
-// Goldschmidt iterations
-// (<https://en.wikipedia.org/wiki/Methods_of_computing_square_roots>)
+#if 0
+  // This is accurate, but slow; it is internally evaluated unvectorized
+  return _mm512_sqrt_pd(x);
+#endif
 #if defined __knl__
+  // We start with an approximate result, then perform Goldschmidt iterations
+  // <https://en.wikipedia.org/wiki/Methods_of_computing_square_roots>.
+  // Theoretically the result should be exact.
   // Initialisation
   CCTK_REAL8_VEC const y0 = _mm512_rsqrt28_pd(x);
   CCTK_REAL8_VEC const x0 = _mm512_mul_pd(x, y0);
@@ -315,9 +327,11 @@ k8sqrt(CCTK_REAL8_VEC const x) {
   // Step
   CCTK_REAL8_VEC const r0 = _mm512_fnmadd_pd(x0, h0, vec8_set1(0.5));
   CCTK_REAL8_VEC const x1 = _mm512_fmadd_pd(x0, r0, x0);
-  // CCTK_REAL8_VEC const h1 = _mm512_fmadd_pd(h0, r0, h0);
   return x1;
 #else
+  // We start with an approximate result, then perform Goldschmidt iterations
+  // <https://en.wikipedia.org/wiki/Methods_of_computing_square_roots>.
+  // Theoretically the result should be exact.
   // Initialisation
   CCTK_REAL8_VEC const y0 = _mm512_rsqrt14_pd(x);
   CCTK_REAL8_VEC const x0 = _mm512_mul_pd(x, y0);
@@ -329,7 +343,6 @@ k8sqrt(CCTK_REAL8_VEC const x) {
   // Step
   CCTK_REAL8_VEC const r1 = _mm512_fnmadd_pd(x1, h1, vec8_set1(0.5));
   CCTK_REAL8_VEC const x2 = _mm512_fmadd_pd(x1, r1, x1);
-  // CCTK_REAL8_VEC const h2 = _mm512_fmadd_pd(h1, r1, h1);
   return x2;
 #endif
 }
