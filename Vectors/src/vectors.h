@@ -360,13 +360,13 @@ template <typename T> struct vecprops {
   cmple(vector_t const &x, vector_t const &y) {
     return vec_op_inc, x <= y;
   }
+  static inline CCTK_ATTRIBUTE_ALWAYS_INLINE vector_t
+  good_copysign(vector_t const &x, vector_t const &y) {
+    return vec_op_inc, k4copysign(x, y);
+  }
   static inline CCTK_ATTRIBUTE_ALWAYS_INLINE constexpr vector_t
   fabs(vector_t const &x) {
     return vec_op_inc, std::fabs(x);
-  }
-  static inline CCTK_ATTRIBUTE_ALWAYS_INLINE constexpr vector_t
-  good_copysign(vector_t const &x, vector_t const &y) {
-    return vec_op_inc, std::copysign(x, y);
   }
   static inline CCTK_ATTRIBUTE_ALWAYS_INLINE constexpr vector_t
   ifthen(bvector_t const &c, vector_t const &x, vector_t const &y) {
@@ -772,7 +772,7 @@ public:
   }
 };
 
-// Cactus defines "copysigne" to "Cactus::copysign"
+// Cactus defines "copysign" to "Cactus::copysign"
 namespace std {
 namespace Cactus {
 template <typename T>
