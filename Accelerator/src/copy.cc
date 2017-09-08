@@ -20,6 +20,33 @@ namespace Accelerator {
   
   device_t *device = NULL;
   
+
+  struct var_tuple {
+    int vi; // var index
+    int tl; // time level;
+    var_tuple() : vi(-1), tl(0) {}
+    var_tuple(int vi_) : vi(vi_), tl(0) {}
+    var_tuple(int vi_,int tl_) : vi(vi_), tl(tl_) {}
+  };
+
+  std::ostream& operator<<(std::ostream& o,const var_tuple& vt) {
+    o << CCTK_FullName(vt.vi);
+    /*
+    for(int i=0;i<vt.tl;i++)
+      o << "_p";
+      */
+    if(vt.tl > 0) {
+      o << "{tl=" << vt.tl << "}";
+    }
+    return o;
+  }
+
+  bool operator<(const var_tuple& v1,const var_tuple& v2) {
+    if(v1.vi < v2.vi) return true;
+    if(v1.vi > v2.vi) return false;
+    if(v1.tl < v2.tl) return true;
+    return false;
+  }
   
   
   //////////////////////////////////////////////////////////////////////////////
@@ -28,7 +55,7 @@ namespace Accelerator {
 
   // Given the |name| of a variable or group, add the corresponding
   // variable indices to |vars|
-  void vars_from_rw_name(const char *name1, vector<CCTK_INT> &vars)
+  void vars_from_rw_name(const char *name1, vector<var_tuple> &vars)
   {
     // Remove trailing "[...]" modifier, if any
     char *const name = strdup(name1);
@@ -40,10 +67,18 @@ namespace Accelerator {
       int const v0 = CCTK_FirstVarIndexI(gi); assert(v0 >= 0);
       int const nv = CCTK_NumVarsInGroupI(gi); assert(nv >= 0);
       for (int v = v0; v < v0+nv; ++v) {
-        vars.push_back(v);
+        var_tuple vt{v};
+        vars.push_back(vt);
       }
     } else {
       // Not a group - should be a variable
+      int n = strlen(name);
+      int tl = 0;
+      while(name[n-1]=='p' && name[n-2]=='_') {
+        tl++;
+        name[n-2] = 0;
+        n -= 2;
+      }
       const int v = CCTK_VarIndex(name);
       if(v < 0) {
         std::ostringstream msg;
@@ -51,7 +86,8 @@ namespace Accelerator {
         std::string msg_str = msg.str();
         CCTK_ERROR(msg_str.c_str());
       }
-      vars.push_back(v);
+      var_tuple vt{v,tl};
+      vars.push_back(vt);
     }
     free(name);
   }
@@ -59,7 +95,7 @@ namespace Accelerator {
   // Given a schedule |attribute| pointer, add the variable indices of
   // all read variables to |vars|
   void get_read_variables(cFunctionData const *restrict const attribute,
-                          vector<CCTK_INT> &vars)
+                          vector<var_tuple> &vars)
   {
     for (int n=0; n<attribute->n_ReadsClauses; ++n) {
       vars_from_rw_name(attribute->ReadsClauses[n], vars);
@@ -69,7 +105,7 @@ namespace Accelerator {
   // Given a schedule |attribute| pointer, add the variable indices of
   // all written variables to |vars|
   void get_written_variables(cFunctionData const *restrict const attribute,
-                             vector<CCTK_INT> &vars)
+                             vector<var_tuple> &vars)
   {
     for (int n=0; n<attribute->n_WritesClauses; ++n) {
       vars_from_rw_name(attribute->WritesClauses[n], vars);
@@ -89,6 +125,7 @@ namespace Accelerator {
     cGH const *restrict const cctkGH = static_cast<cGH const*>(cctkGH_);
     DECLARE_CCTK_PARAMETERS;
     
+    std::cout << ">== Accelerator_Cycle()" << std::endl;
     if (veryverbose) {
       CCTK_VInfo(CCTK_THORNSTRING, "Cycle");
     }
@@ -219,7 +256,17 @@ namespace Accelerator {
     
     return 0;
   }
-  
+
+  extern "C"
+  CCTK_INT
+  AcceleratorThorn_IsValid(const char *name,int tl,int rl,int on_device)
+  {
+    int vi = CCTK_VarIndex(name);
+    if(on_device)
+        return device->mem(vi,rl,tl).get_device_valid();
+    else
+        return device->mem(vi,rl,tl).get_host_valid();
+  }
   
   
   extern "C"
@@ -234,15 +281,22 @@ namespace Accelerator {
     cFunctionData const *restrict const attribute CCTK_ATTRIBUTE_UNUSED =
       static_cast<cFunctionData const*>(attribute_);
     DECLARE_CCTK_PARAMETERS;
-    
+    std::cout << "Accel: PreCall " << attribute->thorn << "::" << attribute->routine << std::endl;
+
     // Don't do anything before the device has been set up. (Note that
     // the device setup routine is called via CallFunction.) This
     // happens only early during startup, long before Cactus variables
     // exist.
-    if (not device) return 0;
+    if (not device) { 
+        std::cout << " >>Not device\n";
+        return 0;
+    }
     
     // Can only handle grid functions if called in local mode
-    if (not Carpet::is_local_mode()) return 0;
+    if (not Carpet::is_local_mode()) {
+        std::cout << " >>Not local mode\n";
+        return 0;
+    }
     
     if (veryverbose) {
       CCTK_VInfo(CCTK_THORNSTRING, "PreCallFunction");
@@ -294,6 +348,7 @@ namespace Accelerator {
     {
       is_device = 0;
     }
+    std::cout << "mem_t: device status=" << is_device << std::endl;
     
     // Copy all required variables to the device or to the host,
     // depending on the language (device or not)
@@ -319,12 +374,15 @@ namespace Accelerator {
     
     vars_t vars, unknowns;
 
-    vector<CCTK_INT> vars_read;
+    vector<var_tuple> vars_read;
     get_read_variables(attribute,vars_read);
 
-    for (vector<CCTK_INT>::iterator iter = vars_read.begin();
+    for (auto iter = vars_read.begin();
          iter != vars_read.end(); ++iter) {
-      int const vi = *iter;
+      auto& vt = *iter;
+      const int vi = vt.vi;
+      if(strchr(CCTK_FullName(vi),'[') != 0)
+        continue;
       assert(vi >= 0);
       int const gi = CCTK_GroupIndexFromVarI(vi);
       assert(gi >= 0);
@@ -335,7 +393,8 @@ namespace Accelerator {
         assert(num_tl <= cactus_tl);
         
         { // Maintain indentation
-          for (int tl=0; tl<num_tl; ++tl) {
+          std::cout << "  Accel: reads " << CCTK_FullName(vi) << std::endl;
+          for (int tl=vt.tl; tl<num_tl; ++tl) {
             
             assert(tl <= device->ntimelevels(vi, rl));
             if (device->ntimelevels(vi, rl) == tl) {
@@ -354,7 +413,7 @@ namespace Accelerator {
             if (not (device->mem(vi, rl, tl).get(dst_valid))) {
               if (not (device->mem(vi, rl, tl).get(src_valid))) {
                 CCTK_VWarn(CCTK_WARN_ABORT, __LINE__, __FILE__, CCTK_THORNSTRING,
-                           "Variable %s:%d is neither valid on the host nor on the device before function %s::%s",
+                           "Variable %s tl=%d is neither valid on the host nor on the device before function %s::%s",
                            CCTK_FullName(vi), tl,attribute->thorn,attribute->routine);
               }
               vars.push_back(vi, rl, tl);
@@ -367,12 +426,13 @@ namespace Accelerator {
       }
     }
     
-    vector<CCTK_INT> vars_written;
+    vector<var_tuple> vars_written;
     get_written_variables(attribute,vars_written);
 
-    for (vector<CCTK_INT>::iterator iter = vars_written.begin();
+    for (auto iter = vars_written.begin();
          iter != vars_written.end(); ++iter) {
-      int const vi = *iter;
+      auto& vt = *iter;
+      int const vi = vt.vi;
       assert(vi >= 0);
       int const gi = CCTK_GroupIndexFromVarI(vi);
       assert(gi >= 0);
@@ -399,9 +459,13 @@ namespace Accelerator {
             // This variable was written by the function which will
             // execute, therefore it will be valid there and invalid
             // elsewhere.
+            if(is_device) {
+                std::cout << "  Accel: writes device " << CCTK_FullName(vi) << std::endl;
+            } else {
+                std::cout << "  Accel: writes host " << CCTK_FullName(vi) << std::endl;
+            }
             device->mem(vi, rl, tl).set(dst_valid,true);
             device->mem(vi, rl, tl).set(src_valid,false);
-            
           }
         }
       }
@@ -525,12 +589,13 @@ namespace Accelerator {
       assert(rl >= 0);
       
       vars_t vars;
-      vector<CCTK_INT> vars_written;
+      vector<var_tuple> vars_written;
       get_written_variables(attribute,vars_written);
 
-      for (vector<CCTK_INT>::iterator iter = vars_written.begin();
+      for (auto iter = vars_written.begin();
            iter != vars_written.end(); ++iter) {
-        int const vi = *iter;
+        auto& vt = *iter;
+        int const vi = vt.vi;
         assert(vi >= 0);
         int const gi = CCTK_GroupIndexFromVarI(vi);
         assert(gi >= 0);
@@ -861,6 +926,7 @@ namespace Accelerator {
       src_valid = mem_t::device_is_valid;//&mem_t::device_valid;
       copy = Device_CopyToHost;
     }
+    std::cout << "mem_t: RequireValidData: on_device=" << on_device << std::endl;
     
     vars_t vars, unknowns;
     for (int var=0; var<nvariables; ++var) {

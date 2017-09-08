@@ -116,7 +116,9 @@ namespace Accelerator {
      * changed.
      */
     void diag() {
-      // std::cout << "mem_t:" << CCTK_VarName(vi) << ":rl=" << rl << ":tl=" << tl << " hd=" << host_valid << device_valid << std::endl;
+      std::string fn = CCTK_FullName(vi);
+      if(fn == "FUNWAVE::testvar1")
+        std::cout << "mem_t:" << CCTK_VarName(vi) << ":rl=" << rl << ":tl=" << tl << " hd=" << host_valid << device_valid << std::endl;
     }
   };
   
@@ -173,7 +175,7 @@ namespace Accelerator {
     mem_t& mem(int vi, int rl, int tl)
     {
       std::string vn = CCTK_VarName(vi);
-      ensure_reflevel(vi, rl);
+      ensure_timelevel(vi,rl,tl);
       assert(has_mem(vi,rl,tl));
 
       mem_t& m = mems.at(vi).at(rl).at(tl);
