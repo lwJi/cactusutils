@@ -20,7 +20,6 @@ namespace Accelerator {
   
   device_t *device = NULL;
   
-
   struct var_tuple {
     int vi; // var index
     int tl; // time level;
@@ -50,73 +49,6 @@ namespace Accelerator {
   
   
   //////////////////////////////////////////////////////////////////////////////
-  
-  
-
-  // Given the |name| of a variable or group, add the corresponding
-  // variable indices to |vars|
-  void vars_from_rw_name(const char *name1, vector<var_tuple> &vars)
-  {
-    // Remove trailing "[...]" modifier, if any
-    char *const name = strdup(name1);
-    char *const p = strchr(name, '(');
-    if (p) *p = '\0';
-    int const gi = CCTK_GroupIndex(name);
-    if (gi >= 0) {
-      // A group
-      int const v0 = CCTK_FirstVarIndexI(gi); assert(v0 >= 0);
-      int const nv = CCTK_NumVarsInGroupI(gi); assert(nv >= 0);
-      for (int v = v0; v < v0+nv; ++v) {
-        var_tuple vt{v};
-        vars.push_back(vt);
-      }
-    } else {
-      // Not a group - should be a variable
-      int n = strlen(name);
-      int tl = 0;
-      while(name[n-1]=='p' && name[n-2]=='_') {
-        tl++;
-        name[n-2] = 0;
-        n -= 2;
-      }
-      const int v = CCTK_VarIndex(name);
-      if(v < 0) {
-        std::ostringstream msg;
-        msg << "Not a valid grid function name: " << name << std::endl;
-        std::string msg_str = msg.str();
-        CCTK_ERROR(msg_str.c_str());
-      }
-      var_tuple vt{v,tl};
-      vars.push_back(vt);
-    }
-    free(name);
-  }
-
-  // Given a schedule |attribute| pointer, add the variable indices of
-  // all read variables to |vars|
-  void get_read_variables(cFunctionData const *restrict const attribute,
-                          vector<var_tuple> &vars)
-  {
-    for (int n=0; n<attribute->n_ReadsClauses; ++n) {
-      vars_from_rw_name(attribute->ReadsClauses[n], vars);
-    }
-  }
-
-  // Given a schedule |attribute| pointer, add the variable indices of
-  // all written variables to |vars|
-  void get_written_variables(cFunctionData const *restrict const attribute,
-                             vector<var_tuple> &vars)
-  {
-    for (int n=0; n<attribute->n_WritesClauses; ++n) {
-      vars_from_rw_name(attribute->WritesClauses[n], vars);
-    }
-  }
-  
-  
-  
-  //////////////////////////////////////////////////////////////////////////////
-  
-  
   
   extern "C"
   CCTK_INT
@@ -375,12 +307,11 @@ namespace Accelerator {
     vars_t vars, unknowns;
 
     vector<var_tuple> vars_read;
-    get_read_variables(attribute,vars_read);
-
-    for (auto iter = vars_read.begin();
-         iter != vars_read.end(); ++iter) {
-      auto& vt = *iter;
-      const int vi = vt.vi;
+    for(int i=0;i<attribute->n_RDWR;i++) {
+      RDWR_entry& rw = attribute->RDWR[i];
+      if(rw.where_rd == 0)
+        continue;
+      const int vi = rw.var_id;
       if(strchr(CCTK_FullName(vi),'[') != 0)
         continue;
       assert(vi >= 0);
@@ -394,7 +325,7 @@ namespace Accelerator {
         
         { // Maintain indentation
           std::cout << "  Accel: reads " << CCTK_FullName(vi) << std::endl;
-          for (int tl=vt.tl; tl<num_tl; ++tl) {
+          for (int tl=rw.time_level; tl<rw.time_level+1; ++tl) {
             
             assert(tl <= device->ntimelevels(vi, rl));
             if (device->ntimelevels(vi, rl) == tl) {
@@ -408,6 +339,10 @@ namespace Accelerator {
               mem_t const newmem = {vi, rl, tl, true, false};
               device->create_timelevel(vi, rl, tl, newmem);
               unknowns.push_back(vi, rl, tl);
+              std::ostringstream msg;
+              msg << "In PreCall to " << attribute->thorn << "::" << attribute->routine << " assuming " << CCTK_FullName(vi) << " tl=" << tl << " is valid on the host." << std::endl;
+              std::string msgs = msg.str();
+              CCTK_VInfo(CCTK_THORNSTRING,msgs.c_str());
             }
             
             if (not (device->mem(vi, rl, tl).get(dst_valid))) {
@@ -426,13 +361,11 @@ namespace Accelerator {
       }
     }
     
-    vector<var_tuple> vars_written;
-    get_written_variables(attribute,vars_written);
-
-    for (auto iter = vars_written.begin();
-         iter != vars_written.end(); ++iter) {
-      auto& vt = *iter;
-      int const vi = vt.vi;
+    for(int i=0;i<attribute->n_RDWR;i++) {
+      RDWR_entry& rw = attribute->RDWR[i];
+      if(rw.where_wr == 0)
+        continue;
+      int const vi = rw.var_id;
       assert(vi >= 0);
       int const gi = CCTK_GroupIndexFromVarI(vi);
       assert(gi >= 0);
@@ -443,7 +376,7 @@ namespace Accelerator {
         assert(num_tl <= cactus_tl);
         
         { // Maintain indentation
-          for (int tl=0; tl<num_tl; ++tl) {
+          for (int tl=rw.time_level; tl<rw.time_level+1; ++tl) {
             
             assert(tl <= device->ntimelevels(vi, rl));
             if (device->ntimelevels(vi, rl) == tl) {
@@ -589,13 +522,18 @@ namespace Accelerator {
       assert(rl >= 0);
       
       vars_t vars;
-      vector<var_tuple> vars_written;
-      get_written_variables(attribute,vars_written);
+      //vector<var_tuple> vars_written;
+      //get_written_variables(attribute,vars_written);
 
-      for (auto iter = vars_written.begin();
-           iter != vars_written.end(); ++iter) {
-        auto& vt = *iter;
-        int const vi = vt.vi;
+      //for (auto iter = vars_written.begin();
+           //iter != vars_written.end(); ++iter) {
+        //auto& vt = *iter;
+        //int const vi = vt.vi;
+      for(int i=0;i<attribute->n_RDWR;i++) {
+        RDWR_entry& rw = attribute->RDWR[i];
+        if(rw.where_wr == 0)
+          continue;
+        int const vi = rw.var_id;
         assert(vi >= 0);
         int const gi = CCTK_GroupIndexFromVarI(vi);
         assert(gi >= 0);
@@ -606,7 +544,7 @@ namespace Accelerator {
           assert(num_tl <= cactus_tl);
           
           { // Maintain indentation
-            for (int tl=0; tl<num_tl; ++tl) {
+            for (int tl=rw.time_level; tl<rw.time_level+1; ++tl) {
               if (device->ntimelevels(vi, rl) > tl) {
                 vars.push_back(vi, rl, tl);
               }
@@ -945,9 +883,13 @@ namespace Accelerator {
         // PostCall). This must be a host function, as all device
         // functions presumably have valid WRITES lists. Therefore we
         // assume the variable is valid on the host.
-        mem_t const newmem = {vi, rl, tl, true, false};
-        device->create_timelevel(vi, rl, tl, newmem);
-        unknowns.push_back(vi, rl, tl);
+        //mem_t const newmem = {vi, rl, tl, true, false};
+        //device->create_timelevel(vi, rl, tl, newmem);
+        //unknowns.push_back(vi, rl, tl);
+        std::stringstream msg;
+        msg << "Variable " << CCTK_FullName(vi) << " at time level " << tl << " is required but not defined.";
+        std::string msgs = msg.str();
+        CCTK_Error(__LINE__,__FILE__,"Accelerator",msgs.c_str());
       }
       
       if (not (device->mem(vi, rl, tl).get(dst_valid))) {

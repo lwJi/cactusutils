@@ -117,7 +117,7 @@ namespace Accelerator {
      */
     void diag() {
       std::string fn = CCTK_FullName(vi);
-      if(fn == "FUNWAVE::testvar1")
+      if(fn == "FUNWAVE::eta")
         std::cout << "mem_t:" << CCTK_VarName(vi) << ":rl=" << rl << ":tl=" << tl << " hd=" << host_valid << device_valid << std::endl;
     }
   };
