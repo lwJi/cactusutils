@@ -435,11 +435,13 @@ void OutputAllTimersPerIteration(CCTK_ARGUMENTS) {
                 double(timers.secs_avg[i]), double(timers.secs_min[i]),
                 double(timers.secs_max[i]));
         fprintf(file_csv, "%s,%.15g,%.15g,%.15g\n",
-                QuoteForCSV(timers.names[i]), double(timers.secs_avg[i]),
-                double(timers.secs_min[i]), double(timers.secs_max[i]));
+                QuoteForCSV(timers.names[i]).c_str(),
+                double(timers.secs_avg[i]), double(timers.secs_min[i]),
+                double(timers.secs_max[i]));
         fprintf(file_tsv, "%s\t%.15g\t%.15g\t%.15g\n",
-                QuoteForTSV(timers.names[i]), double(timers.secs_avg[i]),
-                double(timers.secs_min[i]), double(timers.secs_max[i]));
+                QuoteForTSV(timers.names[i]).c_str(),
+                double(timers.secs_avg[i]), double(timers.secs_min[i]),
+                double(timers.secs_max[i]));
       }
       fclose(file);
       fclose(file_csv);
@@ -778,4 +780,4 @@ string QuoteForTSV(const string &str) {
   }
   return buf.str();
 }
-}
+} // namespace TimerReport
