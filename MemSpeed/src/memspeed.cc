@@ -6,10 +6,12 @@
 #define VECTORISE_STREAMING_STORES 1
 #include <vectors.h>
 
+#include <algorithm>
 #include <cassert>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <exception>
 #include <string>
 #include <vector>
 
@@ -63,7 +65,7 @@ int MPI_Reduce(void *sendbuf, void *recvbuf, int count, MPI_Datatype datatype,
   }
   return 0;
 }
-}
+} // namespace
 #endif
 
 #ifdef _OPENMP
@@ -81,6 +83,7 @@ double omp_get_wtime() {
   return tv.tv_sec + 1.0e-6 * tv.tv_usec;
 }
 #endif
+#if 0
 // Fall back to clock_gettime if OpenMP is not available
 #include <time.h>
 double omp_get_wtime() {
@@ -88,7 +91,16 @@ double omp_get_wtime() {
   clock_gettime(CLOCK_MONOTONIC, &ts);
   return ts.tv_sec + 1.0e-9 * ts.tv_nsec;
 }
+#endif
+// Fall back to C++ if OpenMP is not available
+#include <chrono>
+double omp_get_wtime() {
+  return std::chrono::duration_cast<std::chrono::nanoseconds>(
+             std::chrono::high_resolution_clock::now().time_since_epoch())
+             .count() /
+         1.0e+9;
 }
+} // namespace
 #endif
 
 namespace {
@@ -99,7 +111,7 @@ double mpi_average(MPI_Comm comm, double x) {
   MPI_Comm_size(comm, &size);
   return sum / size;
 }
-}
+} // namespace
 
 static inline int divexact(int x, int y) {
   assert(x >= 0 && y > 0);
@@ -471,22 +483,26 @@ void measure_cpu_iop_speed(const MPI_Comm comm, const int num_threads) {
 // benchmark.
 void calc_memsizes(int cache, ptrdiff_t &skip_memsize, ptrdiff_t &memsize) {
   assert(cache >= 0 && cache < int(cache_info.size()));
+  const char *CACTUS_MAX_MEMORY = getenv("CACTUS_MAX_MEMORY");
+  const ptrdiff_t max_memory =
+      CACTUS_MAX_MEMORY ? atol(CACTUS_MAX_MEMORY) : PTRDIFF_MAX;
+  const ptrdiff_t cache_size = min(max_memory, cache_info[cache].size);
   switch (cache_info[cache].type) {
   default:
     assert(0);
     CCTK_BUILTIN_UNREACHABLE();
   case mem_cache:
     skip_memsize = 0;
-    memsize = cache_info[cache].size * 3 / 4;
+    memsize = cache_size * 3 / 4;
     break;
   case mem_local:
     skip_memsize = 0;
-    memsize = cache_info[cache].size / 4;
+    memsize = cache_size / 4;
     break;
   case mem_global:
     assert(cache > 0);
     assert(cache_info[cache - 1].type == mem_local);
-    skip_memsize = cache_info[cache - 1].size;
+    skip_memsize = min(max_memory, cache_info[cache - 1].size);
     memsize = skip_memsize / 4;
     assert(skip_memsize + memsize <= cache_info[cache].size * 3 / 4);
     break;
@@ -580,9 +596,34 @@ void measure_allocation_speed(const MPI_Comm comm, const int proc_num_threads) {
 #pragma omp barrier
         const double t0 = omp_get_wtime();
         if (omp_get_thread_num() % thread_alloc_every == 0) {
+#if 1
           // Allocate array, set all elements to 1
           vector<char> raw_array(cache_memsize, 1);
           use += raw_array[cache_memsize - 1];
+#else
+          // Allocate array in chunks, set all elements to 1
+          vector<vector<char> > chunks;
+          ptrdiff_t needed = cache_memsize;
+          while (needed > 0) {
+            ptrdiff_t size = min(needed, ptrdiff_t(1024) * 1024 * 1024);
+            while (true) {
+              if (verbose) {
+                printf("        allocating %td of %td bytes...", size, needed);
+                fflush(stdout);
+              }
+              try {
+                chunks.push_back(vector<char>(size, 1));
+                goto done;
+              } catch (const std::exception &e) {
+                size /= 2;
+                assert(size >= 4096);
+              }
+            }
+          done:
+            needed -= size;
+          }
+          use += chunks.back().back();
+#endif
         }
         const double t1 = omp_get_wtime();
         elapsed += t1 - t0;
@@ -1251,9 +1292,9 @@ void measure_write_bandwidth2(const MPI_Comm comm, const int proc_num_threads) {
              cache_info[cache].name.c_str(), cache_info[cache].num_pus,
              node_num_allocs, cache_memsize);
     } else {
-      printf(
-          "    Write bandwidth via cache-bypassing stores for %s (for %d PUs):",
-          cache_info[cache].name.c_str(), cache_info[cache].num_pus);
+      printf("    Write bandwidth via cache-bypassing stores for %s (for %d "
+             "PUs):",
+             cache_info[cache].name.c_str(), cache_info[cache].num_pus);
     }
     fflush(stdout);
 
@@ -1400,7 +1441,8 @@ void measure_stencil_performance(const MPI_Comm comm,
 
     const ptrdiff_t node_memsize = cache_info[cache_info.size() - 1].size;
     // const ptrdiff_t node_memsize_used =
-    //     (skip_memsize + proc_num_allocs * cache_memsize) * node_procs_active;
+    //     (skip_memsize + proc_num_allocs * cache_memsize) *
+    //     node_procs_active;
     const ptrdiff_t np =
         llrint(pow(cache_memsize / (2.0 * sizeof(CCTK_REAL) * proc_num_allocs),
                    1.0 / 3.0));
@@ -1630,7 +1672,7 @@ void measure_mpi_bandwidth(const MPI_Comm comm) {
 }
 
 #endif
-}
+} // namespace
 
 extern "C" void MemSpeed_MeasureSpeed(CCTK_ARGUMENTS) {
   DECLARE_CCTK_ARGUMENTS;
@@ -1726,10 +1768,11 @@ extern "C" void MemSpeed_MeasureSpeed(CCTK_ARGUMENTS) {
 
   if (mpi_info.mpi_num_hosts > 1) {
     MPI_Comm twonodes;
-    MPI_Comm_split(world, mpi_info.mpi_host_num < 2 &&
-                                  mpi_info.mpi_proc_num_on_host == 0
-                              ? 0
-                              : MPI_UNDEFINED,
+    MPI_Comm_split(world,
+                   mpi_info.mpi_host_num < 2 &&
+                           mpi_info.mpi_proc_num_on_host == 0
+                       ? 0
+                       : MPI_UNDEFINED,
                    mpi_info.mpi_proc_num, &twonodes);
 
     printf("  Dual-node measurements:\n");
