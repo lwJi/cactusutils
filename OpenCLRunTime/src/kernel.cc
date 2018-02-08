@@ -366,26 +366,23 @@ void OpenCLKernel::setup_args(cGH const *const cctkGH,
     int const gi = CCTK_GroupIndexFromVarI(vi);
     if (CCTK_GroupTypeI(gi) != CCTK_GF) {
       char *const group_name = CCTK_GroupName(gi);
-      CCTK_VWarn(CCTK_WARN_ABORT, __LINE__, __FILE__, CCTK_THORNSTRING,
-                 "OpenCL kernel %s uses the grid variable group %s, which is "
-                 "not a grid function",
-                 name, group_name);
+      CCTK_VERROR("OpenCL kernel %s uses the grid variable group %s, which is "
+                  "not a grid function",
+                  name, group_name);
       free(group_name);
     }
     if (CCTK_VarTypeI(vi) != CCTK_VARIABLE_REAL) {
       char *const group_name = CCTK_GroupName(gi);
-      CCTK_VWarn(CCTK_WARN_ABORT, __LINE__, __FILE__, CCTK_THORNSTRING,
-                 "OpenCL kernel %s uses the grid variable group %s, which is "
-                 "not of variable type CCTK_REAL",
-                 name, group_name);
+      CCTK_VERROR("OpenCL kernel %s uses the grid variable group %s, which is "
+                  "not of variable type CCTK_REAL",
+                  name, group_name);
       free(group_name);
     }
     if (tl >= CCTK_ActiveTimeLevelsGI(cctkGH, gi)) {
       char *const group_name = CCTK_GroupName(gi);
-      CCTK_VWarn(CCTK_WARN_ABORT, __LINE__, __FILE__, CCTK_THORNSTRING,
-                 "OpenCL kernel %s uses timelevel %d of the grid variable "
-                 "group %s, which does not exist",
-                 name, tl, group_name);
+      CCTK_VERROR("OpenCL kernel %s uses timelevel %d of the grid variable "
+                  "group %s, which does not exist",
+                  name, tl, group_name);
       free(group_name);
     }
   }
@@ -417,8 +414,7 @@ void OpenCLKernel::call(cGH const *const cctkGH, int const imin[],
     int const tl = args[arg].tl;
     if (tl >= int(device->mems.at(vi).size())) {
       char *const fullname = CCTK_FullName(vi);
-      CCTK_VWarn(CCTK_WARN_ABORT, __LINE__, __FILE__, CCTK_THORNSTRING,
-                 "Variable %s/%d does not exist on the device", fullname, tl);
+      CCTK_VERROR("Variable %s/%d does not exist on the device", fullname, tl);
       free(fullname);
     }
 

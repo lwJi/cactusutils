@@ -139,15 +139,14 @@ void checkErr1(cl_int const errcode, char const *const cmd,
                char const *const file, int const line) {
   if (errcode == CL_SUCCESS)
     return;
-  CCTK_VWarn(CCTK_WARN_ABORT, line, file, CCTK_THORNSTRING, "%s\nError %d: %s",
-             cmd, int(errcode), error_string(errcode));
+  CCTK_VERROR("%s\nError %d: %s", cmd, int(errcode), error_string(errcode));
 }
 
 void checkWarn1(cl_int const errcode, char const *const cmd,
                 char const *const file, int const line) {
   if (errcode == CL_SUCCESS)
     return;
-  CCTK_VWarn(CCTK_WARN_ALERT, __LINE__, __FILE__, CCTK_THORNSTRING,
+  CCTK_VWARN(CCTK_WARN_ALERT,
              "%s\nError %d: %s", cmd, int(errcode), error_string(errcode));
 }
 
@@ -177,7 +176,7 @@ OpenCLDevice::OpenCLDevice() : f_have_grid(false) {
     want_device_types =
         CL_DEVICE_TYPE_CPU | CL_DEVICE_TYPE_GPU | CL_DEVICE_TYPE_ACCELERATOR;
   } else {
-    CCTK_VWarn(CCTK_WARN_ALERT, __LINE__, __FILE__, CCTK_THORNSTRING,
+    CCTK_VWARN(CCTK_WARN_ALERT,
                "Unknown device type \"%s\" selected", opencl_device_type);
   }
 
@@ -195,9 +194,8 @@ OpenCLDevice::OpenCLDevice() : f_have_grid(false) {
       goto found_context;
   }
   // Could not find a context on any platform, abort
-  CCTK_VWarn(CCTK_WARN_ABORT, __LINE__, __FILE__, CCTK_THORNSTRING,
-             "Could not create OpenCL context for device type \"%s\"",
-             opencl_device_type);
+  CCTK_VERROR("Could not create OpenCL context for device type \"%s\"",
+              opencl_device_type);
 
 // Found a context, continue
 found_context:
