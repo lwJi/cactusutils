@@ -361,7 +361,7 @@ void rdf::Update(cGH const *const cctkGH) {
         cctkGH, get_state() == final ? 1 : 2, get_state() == final ? 1 : 0,
         "Simulation finished ?", CCTK_THORNSTRING " runtime info");
     if (retval < 0) {
-      CCTK_VWarn(1, __LINE__, __FILE__, CCTK_THORNSTRING,
+      CCTK_VWARN(CCTK_WARN_ALERT,
                  "Failed to publish runtime information (error code %d)",
                  retval);
     }

@@ -70,8 +70,7 @@ static void do_output(cGH const *restrict const cctkGH) {
              out_dir, output_source_subdirectory, cactus_source[count]->thorn);
     FILE *const file = fopen(filename, "w");
     if (!file) {
-      CCTK_VWarn(CCTK_WARN_ABORT, __LINE__, __FILE__, CCTK_THORNSTRING,
-                 "Failed to open source file \"%s\" for writing", filename);
+      CCTK_VERROR("Failed to open source file \"%s\" for writing", filename);
     }
     for (struct datainfo const *datainfo = cactus_source[count]->first;
          datainfo; datainfo = datainfo->next) {
@@ -87,8 +86,7 @@ static void do_output(cGH const *restrict const cctkGH) {
              output_source_subdirectory);
     FILE *const readme = fopen(readmename, "w");
     if (!readme) {
-      CCTK_VWarn(CCTK_WARN_ABORT, __LINE__, __FILE__, CCTK_THORNSTRING,
-                 "Failed to open README file \"%s\" for writing", readmename);
+      CCTK_VERROR("Failed to open README file \"%s\" for writing", readmename);
     }
     fprintf(
         readme,

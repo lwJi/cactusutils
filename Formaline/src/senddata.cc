@@ -191,7 +191,7 @@ int SendData(string const hostname, int const port, string const data) {
       static set<destination_t> did_complain;
       if (did_complain.count(destination) == 0) {
         did_complain.insert(destination);
-        CCTK_VWarn(CCTK_WARN_ALERT, __LINE__, __FILE__, CCTK_THORNSTRING,
+        CCTK_VWARN(CCTK_WARN_ALERT,
                    "Strange character in relay host name \"%s\" -- not calling "
                    "system()",
                    hostname.c_str());
@@ -253,7 +253,7 @@ int SendData(string const hostname, int const port, string const data) {
     static set<destination_t> did_complain;
     if (did_complain.count(destination) == 0) {
       did_complain.insert(destination);
-      CCTK_VWarn(CCTK_WARN_ALERT, __LINE__, __FILE__, CCTK_THORNSTRING,
+      CCTK_VWARN(CCTK_WARN_ALERT,
                  "Failed to send data to %s:%d", hostname.c_str(), port);
       return -5;
     }

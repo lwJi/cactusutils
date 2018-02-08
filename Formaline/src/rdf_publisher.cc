@@ -130,7 +130,7 @@ static CCTK_INT PublishTableAsRDF(CCTK_POINTER_TO_CONST cctkGH,
     Util_TableItQueryKeyValueInfo(iterator, maxkeylen + 1, userkey, &typecode,
                                   &n_elements);
     if (n_elements <= 0) {
-      CCTK_VWarn(3, __LINE__, __FILE__, CCTK_THORNSTRING,
+      CCTK_VWARN(CCTK_WARN_PICKY,
                  "No value provided for user key '%s' in table to be "
                  "published with key '%s'",
                  userkey, key);
@@ -138,7 +138,7 @@ static CCTK_INT PublishTableAsRDF(CCTK_POINTER_TO_CONST cctkGH,
     }
     if (n_elements > 1 and
         (typecode == CCTK_VARIABLE_INT or typecode == CCTK_VARIABLE_REAL)) {
-      CCTK_VWarn(3, __LINE__, __FILE__, CCTK_THORNSTRING,
+      CCTK_VWARN(CCTK_WARN_PICKY,
                  "Array value not supported for user key '%s' in table to "
                  "be published with key '%s'",
                  userkey, key);
@@ -146,7 +146,7 @@ static CCTK_INT PublishTableAsRDF(CCTK_POINTER_TO_CONST cctkGH,
     } else if (typecode != CCTK_VARIABLE_CHAR and
                typecode != CCTK_VARIABLE_INT and
                typecode != CCTK_VARIABLE_REAL) {
-      CCTK_VWarn(3, __LINE__, __FILE__, CCTK_THORNSTRING,
+      CCTK_VWARN(CCTK_WARN_PICKY,
                  "Unsupported datatype '%s' for value with user key '%s' "
                  "in table to be published with key '%s'",
                  CCTK_VarTypeName(typecode), userkey, key);
@@ -283,11 +283,10 @@ extern "C" void Formaline_RegisterPublishRDF_Callbacks(CCTK_ARGUMENTS) {
     if (registered) {
       if (CCTK_ParameterSetNotifyRegister(ParameterSetNotify, NULL,
                                           CCTK_THORNSTRING, NULL, NULL)) {
-        CCTK_VWarn(0, __LINE__, __FILE__, CCTK_THORNSTRING,
-                   "Couldn't register parameter set notify callback");
+        CCTK_VERROR("Couldn't register parameter set notify callback");
       }
     } else {
-      CCTK_VWarn(1, __LINE__, __FILE__, CCTK_THORNSTRING,
+      CCTK_VWARN(CCTK_WARN_ALERT,
                  "Couldn't register Publish RDF callbacks because no thorn "
                  "provides Publish register API aliases functions");
     }
