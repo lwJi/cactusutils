@@ -58,21 +58,30 @@ char const *get_simulation_id(cGH const *const cctkGH) {
     return simulation_id;
 
   string simulation_id_str;
-  // Expect the simulation ID id a file in the parent directory of
-  // the output directory
-  DECLARE_CCTK_PARAMETERS;
-  string const out_dir_str = string(out_dir);
-  size_t const last_nonslash = out_dir_str.find_last_not_of("/");
-  if (last_nonslash != string::npos) {
-    size_t const last_slash = out_dir_str.rfind('/', last_nonslash);
-    size_t const len = last_slash == string::npos ? 0 : last_slash + 1;
-    string const simulation_id_filename =
-        out_dir_str.substr(0, len) + string("SIMULATION_ID");
 
-    // Open file and read content
-    ifstream simulation_id_file(simulation_id_filename.c_str());
-    if (simulation_id_file) {
-      getline(simulation_id_file, simulation_id_str);
+  // Expect the simulation ID in an environment variable
+  const char *simid = getenv("SIMULATION_ID");
+  if (simid != 0) {
+    simulation_id_str = string(simid);
+  }
+
+  if (simulation_id_str.empty()) {
+    // Expect the simulation ID in a file in the parent directory of the output
+    // directory
+    DECLARE_CCTK_PARAMETERS;
+    string const out_dir_str = string(out_dir);
+    size_t const last_nonslash = out_dir_str.find_last_not_of("/");
+    if (last_nonslash != string::npos) {
+      size_t const last_slash = out_dir_str.rfind('/', last_nonslash);
+      size_t const len = last_slash == string::npos ? 0 : last_slash + 1;
+      string const simulation_id_filename =
+          out_dir_str.substr(0, len) + string("SIMULATION_ID");
+
+      // Open file and read content
+      ifstream simulation_id_file(simulation_id_filename.c_str());
+      if (simulation_id_file) {
+        getline(simulation_id_file, simulation_id_str);
+      }
     }
   }
 
