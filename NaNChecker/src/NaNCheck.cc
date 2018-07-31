@@ -1,5 +1,5 @@
 /*@@
-  @file       NaNCheck.c
+  @file       NaNCheck.cc
    @date      Sat 21 Apr 2001
    @author    Thomas Radke
    @desc
@@ -15,6 +15,7 @@
 #include <cstring>
 #include <cassert>
 #include <sstream>
+#include <vector>
 
 #include "cctk.h"
 #include "cctk_WarnLevel.h"
@@ -66,6 +67,7 @@ void PrintWarning(const char *error_type, int verbose, int linear_index,
  ********************    Internal Typedefs   ************************
  ********************************************************************/
 typedef struct {
+  // default constructor and destructors are fine
   const cGH *GH;
   int verbose;
   bool report_missing_storage;
@@ -73,7 +75,9 @@ typedef struct {
   const char *action_if_found;
   CCTK_INT count;
   CCTK_INT *NaNmask;
-  int bitmask;
+  CCTK_INT next_bitnum;
+  std::vector<CCTK_INT> local_bitnums;
+  std::vector<CCTK_INT> global_bitnums;
   bool check_for_nan;
   bool check_for_inf;
   int cctk_iteration;
@@ -112,7 +116,63 @@ void NaNChecker_ResetCounter(CCTK_ARGUMENTS) {
 }
 
 /*@@
-  @routine    NaNChecker_NaNCheck
+  @routine    NaNChecker_NaNCheck_Prepare
+  @author     Thomas Radke
+  @date       Sat 21 Apr 2001
+  @desc
+              If it is time to check, set up counters and data structures
+              required to count NaNs on this refinement level.
+  @enddesc
+  @calls
+
+  @var        GH
+  @vdesc      Pointer to CCTK GH
+  @vtype      const cGH *
+  @vio        in
+  @endvar
+@@*/
+t_nanchecker_info *info = NULL;
+extern "C" void NaNChecker_NaNCheck_Prepare(CCTK_ARGUMENTS) {
+  DECLARE_CCTK_ARGUMENTS_NaNChecker_NaNCheck_Prepare;
+  DECLARE_CCTK_PARAMETERS;
+
+  if (cctk_iteration < check_after ||
+      check_every == 0 || cctk_iteration % check_every) {
+    return;
+  }
+
+  *NaNsFound = 0;
+
+  assert(info == NULL);
+  info = new t_nanchecker_info();
+  info->count = 0;
+  info->next_bitnum = 0;
+  info->local_bitnums.resize(CCTK_NumVars(), -1);
+  info->global_bitnums.resize(CCTK_NumVars(), -1);
+  info->report_max = report_max;
+  info->action_if_found = action_if_found;
+  info->verbose = CCTK_Equals(verbose, "all");
+  /* don't report missing storage variables if we check everything since there
+   * will be very many variables without storage */
+  info->report_missing_storage = not CCTK_EQUALS(check_vars, "all");
+  info->cctk_iteration = cctk_iteration;
+  info->ignore_restricted_points = ignore_restricted_points;
+  info->restriction_mask = restriction_mask;
+
+  if (CCTK_Equals(check_for, "NaN")) {
+    info->check_for_nan = true;
+    info->check_for_inf = false;
+  } else if (CCTK_Equals(check_for, "Inf")) {
+    info->check_for_nan = false;
+    info->check_for_inf = true;
+  } else {
+    info->check_for_nan = true;
+    info->check_for_inf = true;
+  }
+}
+
+/*@@
+  @routine    NaNChecker_NaNCheck_Check
   @author     Thomas Radke
   @date       Sat 21 Apr 2001
   @desc
@@ -128,86 +188,236 @@ void NaNChecker_ResetCounter(CCTK_ARGUMENTS) {
   @vio        in
   @endvar
 @@*/
-t_nanchecker_info info;
-extern "C" void NaNChecker_NaNCheck_Prepare(CCTK_ARGUMENTS) {
-  DECLARE_CCTK_ARGUMENTS_NaNChecker_NaNCheck_Prepare;
+extern "C" void NaNChecker_NaNCheck_Check(CCTK_ARGUMENTS) {
+  DECLARE_CCTK_ARGUMENTS_NaNChecker_NaNCheck_Check;
   DECLARE_CCTK_PARAMETERS;
-  int i, nelems;
 
   if (cctk_iteration < check_after ||
       check_every == 0 || cctk_iteration % check_every) {
     return;
   }
 
-  info.GH = cctkGH;
-  info.count = 0;
-  info.bitmask = 0;
-  info.report_max = report_max;
-  info.action_if_found = action_if_found;
-  info.verbose = CCTK_Equals(verbose, "all");
-  /* don't report missing storage variables if we check everything since there
-   * will be very many variables without storage */
-  info.report_missing_storage = not CCTK_EQUALS(check_vars, "all");
-  info.cctk_iteration = cctk_iteration;
-  info.ignore_restricted_points = ignore_restricted_points;
-  info.restriction_mask = restriction_mask;
+  assert(info != NULL);
+  info->GH = cctkGH;
+  info->NaNmask = out_NaNmask ? NaNmask : NULL;
+  if (info->NaNmask) {
+    int i, nelems;
+    /* zero out the NaN mask */
+    for (i = 0, nelems = 1; i < cctk_dim; i++) {
+      nelems *= cctk_ash[i];
+    }
+    memset(info->NaNmask, 0, nelems * sizeof(CCTK_INT));
+  }
 
-  info.NaNmask = out_NaNmask ? NaNmask : NULL;
-  if (info.NaNmask) {
+  CCTK_TraverseString(check_vars, CheckForNaN, info, CCTK_GROUP_OR_VAR);
+}
+
+/*@@
+  @routine    NaNChecker_NaNCheck_UnifyBitnums
+  @author     Roland Haas
+  @date       July 31 2018
+  @desc
+              If it is time to check, construct a globally unique set of bit
+              numbers for the NaN mask.
+  @enddesc
+  @calls
+
+  @var        GH
+  @vdesc      Pointer to CCTK GH
+  @vtype      const cGH *
+  @vio        in
+  @endvar
+@@*/
+extern "C" void NaNChecker_NaNCheck_UnifyBitnums(CCTK_ARGUMENTS) {
+  DECLARE_CCTK_ARGUMENTS_NaNChecker_NaNCheck_UnifyBitnums;
+  DECLARE_CCTK_PARAMETERS;
+
+  if (!out_NaNmask ||
+      cctk_iteration < check_after ||
+      check_every == 0 || cctk_iteration % check_every) {
+    return;
+  }
+
+  assert(info != NULL);
+
+  // find out all *new* bits that are used and add them to the existing global
+  // list of bits. We must be careful never to unassign a bit that was used in
+  // a previous level.
+  int nvars = static_cast<int>(info->local_bitnums.size());
+  // initially reduction result to local values. In case reduction fails, we
+  // have at least the local results.
+  std::vector<CCTK_INT> bitnums_used(info->local_bitnums);
+  int max_handle = CCTK_ReductionArrayHandle("maximum");
+  if (max_handle >= 0) {
+    CCTK_ReduceLocalArray1D(cctkGH, -1, max_handle, &info->local_bitnums[0],
+                            &bitnums_used[0], nvars, CCTK_VARIABLE_INT);
+  } else {
+    CCTK_VWARN(CCTK_WARN_ALERT, "Could not obtain 'maximum' reduction handle: %d",
+               max_handle);
+  }
+
+  // merge new bitnums into globbal list
+  assert(info->global_bitnums.size() == bitnums_used.size());
+  int next_bitnum = 0;
+  for (int vindex = 0; vindex < nvars; vindex++) {
+      if (info->global_bitnums.at(vindex) >= 0) {
+        next_bitnum += 1;
+      }
+  }
+  assert(next_bitnum <= int(8 * sizeof(CCTK_INT)));
+  for (int vindex = 0; vindex < nvars; vindex++) {
+    if (bitnums_used.at(vindex) >= 0 && info->global_bitnums.at(vindex) < 0) {
+      if(next_bitnum < int(8 * sizeof(CCTK_INT))) {
+        info->global_bitnums.at(vindex) = next_bitnum;
+        next_bitnum += 1;
+      }
+    }
+  }
+}
+
+/*@@
+  @routine    NaNChecker_NaNCheck_UnifyNaNmask
+  @author     Roland Haas
+  @date       July 31 2018
+  @desc
+              If it is time to check, remap the bits in NaNMask to be globally
+              the same.
+  @enddesc
+  @calls
+
+  @var        GH
+  @vdesc      Pointer to CCTK GH
+  @vtype      const cGH *
+  @vio        in
+  @endvar
+@@*/
+extern "C" void NaNChecker_NaNCheck_UnifyNaNmask(CCTK_ARGUMENTS) {
+  DECLARE_CCTK_ARGUMENTS_NaNChecker_NaNCheck_UnifyNaNmask;
+  DECLARE_CCTK_PARAMETERS;
+
+  if (!out_NaNmask ||
+      cctk_iteration < check_after ||
+      check_every == 0 || cctk_iteration % check_every) {
+    return;
+  }
+
+  assert(info != NULL);
+
+  /* construct a mapping from the bit number used to the variable index */
+  std::vector<CCTK_INT> vindex_from_local_bitnum(8 * sizeof(CCTK_INT), -1);
+  for(size_t vindex = 0; vindex < info->local_bitnums.size(); vindex++) {
+    CCTK_INT bitnum = info->local_bitnums[vindex];
+    if (bitnum >= 0) {
+      vindex_from_local_bitnum.at(bitnum) = vindex;
+    }
+  }
+
+  /* remap bits */
+  size_t nelems = 1;
+  for (int i = 0; i < cctk_dim; i++) {
+    nelems *= cctk_ash[i];
+  }
+  for (size_t i = 0; i < nelems; i++) {
+    CCTK_INT oldval = NaNmask[i], newval = 0;
+    if (oldval) {
+      for (size_t b = 0; b < 8 * sizeof(CCTK_INT); b++) {
+        if (oldval & (1 << b)) {
+          CCTK_INT newbit = info->global_bitnums.at(vindex_from_local_bitnum.at(b));
+          if (newbit >= 0) {
+            newval |= (1 << newbit);
+          }
+        }
+      }
+      NaNmask[i] = newval;
+    }
+  }
+
+  /* update bitnums to the ones actually used */
+  info->local_bitnums = info->global_bitnums;
+}
+
+/*@@
+  @routine    NaNChecker_NaNCheck_Finish
+  @author     Thomas Radke
+  @date       Sat 21 Apr 2001
+  @desc
+              If it is time to check, compute total number of NaNs on this
+              level.
+  @enddesc
+  @calls
+
+  @var        GH
+  @vdesc      Pointer to CCTK GH
+  @vtype      const cGH *
+  @vio        in
+  @endvar
+@@*/
+extern "C" void NaNChecker_NaNCheck_Finish(CCTK_ARGUMENTS) {
+  DECLARE_CCTK_ARGUMENTS_NaNChecker_NaNCheck_Finish;
+  DECLARE_CCTK_PARAMETERS;
+
+  if (cctk_iteration < check_after ||
+      check_every == 0 || cctk_iteration % check_every) {
+    return;
+  }
+
+  assert(info != NULL);
+
+  /* reduce the NaN counter globally and accumulate in NaNChecker::NaNsFound */
+  *NaNsFound = info->count; // return at least some NaNcount
+  int sum_handle = CCTK_ReductionArrayHandle("sum");
+  if (sum_handle >= 0) {
+    CCTK_ReduceLocalScalar(cctkGH, -1, sum_handle, &info->count, NaNsFound,
+                           CCTK_VARIABLE_INT);
+  } else {
+    CCTK_VWARN(CCTK_WARN_ALERT, "Could not obtain 'sum' reduction handle: %d",
+               sum_handle);
+  }
+
+  delete info;
+  info = NULL;
+}
+
+/*@@
+  @routine    NaNChecker_OutputMask
+  @author     Thomas Radke
+  @date       Tue 22 June 2004
+  @desc
+              If any NaNs were found, output the NaNmask (if requested).
+  @enddesc
+
+  @var        GH
+  @vdesc      Pointer to CCTK GH
+  @vtype      const cGH *
+  @vio        in
+  @endvar
+@@*/
+extern "C" void NaNChecker_OutputMask(CCTK_ARGUMENTS) {
+  DECLARE_CCTK_ARGUMENTS_NaNChecker_OutputMask;
+  DECLARE_CCTK_PARAMETERS;
+
+  /* if no NaNs were found then this routine doesn't do anything */
+  if (!*NaNsFound) {
+    return;
+  }
+
+  /* output NaN mask with the 'IOHDF5' I/O method */
+  if (out_NaNmask) {
     /* NaNmask can only be output once per iteration */
     if (cctk_iteration == last_iteration_output) {
       CCTK_WARN(2, "Already output NaNmask at this iteration");
       return;
     }
 
-    /* zero out the NaN mask */
-    for (i = 0, nelems = 1; i < cctk_dim; i++) {
-      nelems *= cctk_ash[i];
+    if (CCTK_Equals(verbose, "all")) {
+      CCTK_INFO("Write out NaN mask using the 'IOHDF5' I/O method");
     }
-    memset(info.NaNmask, 0, nelems * sizeof(CCTK_INT));
+    CCTK_OutputVarAsByMethod(cctkGH, "NaNChecker::NaNmask{downsample={1 1 1}}",
+                             "IOHDF5", "NaNmask");
+
+    /* save the iteration of the last NaNmask output */
+    last_iteration_output = cctk_iteration;
   }
-
-  if (CCTK_Equals(check_for, "NaN")) {
-    info.check_for_nan = true;
-    info.check_for_inf = false;
-  } else if (CCTK_Equals(check_for, "Inf")) {
-    info.check_for_nan = false;
-    info.check_for_inf = true;
-  } else {
-    info.check_for_nan = true;
-    info.check_for_inf = true;
-  }
-}
-
-extern "C" void NaNChecker_NaNCheck_Check(CCTK_ARGUMENTS) {
-  DECLARE_CCTK_ARGUMENTS_NaNChecker_NaNCheck_Check;
-  DECLARE_CCTK_PARAMETERS;
-
-  if (cctk_iteration < check_after ||
-      check_every == 0 || cctk_iteration % check_every ||
-      (info.NaNmask && cctk_iteration == last_iteration_output)) {
-    return;
-  }
-
-  CCTK_TraverseString(check_vars, CheckForNaN, &info, CCTK_GROUP_OR_VAR);
-}
-
-extern "C" void NaNChecker_NaNCheck_Finish(CCTK_ARGUMENTS) {
-  DECLARE_CCTK_ARGUMENTS_NaNChecker_NaNCheck_Finish;
-  DECLARE_CCTK_PARAMETERS;
-
-  if (cctk_iteration < check_after ||
-      check_every == 0 || cctk_iteration % check_every ||
-      (info.NaNmask && cctk_iteration == last_iteration_output)) {
-    return;
-  }
-
-  /* reduce the NaN counter globally and accumulate in NaNChecker::NaNsFound */
-  int sum_handle = CCTK_ReductionArrayHandle("sum");
-  CCTK_INT count = 0;
-  CCTK_ReduceLocalScalar(cctkGH, -1, sum_handle, &info.count, &count,
-                         CCTK_VARIABLE_INT);
-  *NaNsFound += count;
 }
 
 /*@@
@@ -215,8 +425,8 @@ extern "C" void NaNChecker_NaNCheck_Finish(CCTK_ARGUMENTS) {
   @author     Thomas Radke
   @date       Tue 22 June 2004
   @desc
-              If any NaNs were found, output the NaNmask (if requested)
-              and take some action (according to NaNChecker::action_if_found).
+              If any NaNs were found, take some action (according to
+              NaNChecker::action_if_found).
   @enddesc
 
   @var        GH
@@ -229,31 +439,17 @@ extern "C" void NaNChecker_TakeAction(CCTK_ARGUMENTS) {
   DECLARE_CCTK_ARGUMENTS_NaNChecker_TakeAction;
   DECLARE_CCTK_PARAMETERS;
 
-  /* if no NaNs were found then this routine doesn't do anything */
-  if (!*NaNsFound) {
-    return;
-  }
-
-  /* output NaN mask with the 'IOHDF5' I/O method */
-  if (out_NaNmask) {
-    if (CCTK_Equals(verbose, "all")) {
-      CCTK_INFO("Write out NaN mask using the 'IOHDF5' I/O method");
+  /* if no NaNs were found then this routine doesn't output anything */
+  if (*NaNsFound) {
+    if (CCTK_Equals(action_if_found, "terminate")) {
+      CCTK_WARN(1, "'action_if_found' parameter is set to 'terminate' - "
+                   "scheduling graceful termination of Cactus");
+      CCTK_TerminateNext(cctkGH);
+    } else if (CCTK_Equals(action_if_found, "abort")) {
+      CCTK_WARN(1, "'action_if_found' parameter is set to 'abort' - "
+                   "aborting Cactus now");
+      CCTK_Abort(cctkGH, 0);
     }
-    CCTK_OutputVarAsByMethod(cctkGH, "NaNChecker::NaNmask{downsample={1 1 1}}",
-                             "IOHDF5", "NaNmask");
-
-    /* save the iteration of the last NaNmask output */
-    last_iteration_output = cctk_iteration;
-  }
-
-  if (CCTK_Equals(action_if_found, "terminate")) {
-    CCTK_WARN(1, "'action_if_found' parameter is set to 'terminate' - "
-                 "scheduling graceful termination of Cactus");
-    CCTK_TerminateNext(cctkGH);
-  } else if (CCTK_Equals(action_if_found, "abort")) {
-    CCTK_WARN(1, "'action_if_found' parameter is set to 'abort' - "
-                 "aborting Cactus now");
-    CCTK_Abort(cctkGH, 0);
   }
 }
 
@@ -346,7 +542,7 @@ extern "C" int NaNChecker_CheckVarsForNaN(const cGH *GH, int report_max,
 
   info.GH = GH;
   info.count = 0;
-  info.bitmask = 0;
+  info.next_bitnum = 0;
   info.verbose = CCTK_Equals(verbose, "all");
   /* don't report missing storage variables if we check everything since there
    * will be very many variables without storage */
@@ -620,7 +816,7 @@ void CHECK_DATA(const cctk_type *_data, int nelems,
                 CCTK_INT &nans_found, int reflevel, int map,
                 CCTK_INT cctk_iteration, int fp_type,
                 const CCTK_REAL *const *coords, const char *fullname,
-                const cGroupDynamicData &gdata, CCTK_INT gtype) {
+                const cGroupDynamicData &gdata, CCTK_INT gtype, CCTK_INT bitnum) {
 /* now loop over all elements and check against NaN's */
 #pragma omp parallel for schedule(dynamic)
   for (int _i = 0; _i < nelems; _i++) {
@@ -660,7 +856,9 @@ void CHECK_DATA(const cctk_type *_data, int nelems,
                          map, cctk_iteration, fp_type, coords, fullname, &gdata);
           }
           if (info->NaNmask && gtype == CCTK_GF) {
-            info->NaNmask[_i] |= 1 << info->bitmask;
+            // since bitnum can be (at most) 8*sizeof(CCTK_INT) this relies on
+            // << not wrapping around ie for 32bit CCTK_INT: (1 << 32) == 0
+            info->NaNmask[_i] |= 1 << bitnum;
           }
         }
       }
@@ -701,8 +899,8 @@ void CHECK_DATA(const cctk_type *_data, int nelems,
 @@*/
 void CheckForNaN(int vindex, const char *optstring, void *_info) {
   t_nanchecker_info *info;
-  int i, sum_handle;
-  CCTK_INT nans_found, global_nans_found;
+  int i;
+  CCTK_INT nans_found;
   int timelevel, fp_type, vtype, gtype, gindex, nelems;
   char *fullname, *endptr;
   const char *vtypename;
@@ -715,12 +913,22 @@ void CheckForNaN(int vindex, const char *optstring, void *_info) {
   int cctk_iteration, ignore_restricted_points;
   bool report_missing_storage;
   const char *restriction_mask;
+  CCTK_INT next_bitnum = -1;
 
   info = (t_nanchecker_info *)_info;
   cctk_iteration = info->cctk_iteration;
   report_missing_storage = info->report_missing_storage;
   ignore_restricted_points = info->ignore_restricted_points;
   restriction_mask = info->restriction_mask;
+  /* which bit to (tenatively) use for the variable. Only if nans are actually
+   * found do we record ti permanently */
+  if (info->NaNmask) { // bitnums are only defined if NaNMask is used
+    if (info->local_bitnums.at(vindex) >= 0) {
+      next_bitnum = info->local_bitnums[vindex];
+    } else {
+      next_bitnum = info->next_bitnum;
+    }
+  }
 
   vtype = CCTK_VarTypeI(vindex);
   fullname = CCTK_FullName(vindex);
@@ -840,27 +1048,27 @@ void CheckForNaN(int vindex, const char *optstring, void *_info) {
   if (vtype == CCTK_VARIABLE_REAL || vtype == CCTK_VARIABLE_COMPLEX) {
     CHECK_DATA((const CCTK_REAL *)data, nelems, CarpetWeights, info, nans_found,
                reflevel, map, cctk_iteration, fp_type, coords, fullname, gdata,
-               gtype);
+               gtype, next_bitnum);
   }
 #ifdef HAVE_CCTK_REAL4
   else if (vtype == CCTK_VARIABLE_REAL4 || vtype == CCTK_VARIABLE_COMPLEX8) {
     CHECK_DATA((const CCTK_REAL4 *)data, nelems, CarpetWeights, info,
                nans_found, reflevel, map, cctk_iteration, fp_type, coords,
-               fullname, gdata, gtype);
+               fullname, gdata, gtype, next_bitnum);
   }
 #endif
 #ifdef HAVE_CCTK_REAL8
   else if (vtype == CCTK_VARIABLE_REAL8 || vtype == CCTK_VARIABLE_COMPLEX16) {
     CHECK_DATA((const CCTK_REAL8 *)data, nelems, CarpetWeights, info,
                nans_found, reflevel, map, cctk_iteration, fp_type, coords,
-               fullname, gdata, gtype);
+               fullname, gdata, gtype, next_bitnum);
   }
 #endif
 #ifdef HAVE_CCTK_REAL16
   else if (vtype == CCTK_VARIABLE_REAL16 || vtype == CCTK_VARIABLE_COMPLEX32) {
     CHECK_DATA((const CCTK_REAL16 *)data, nelems, CarpetWeights, info,
                nans_found, reflevel, map, cctk_iteration, fp_type, coords,
-               fullname, gdata, gtype);
+               fullname, gdata, gtype, next_bitnum);
   }
 #endif
   else {
@@ -872,25 +1080,24 @@ void CheckForNaN(int vindex, const char *optstring, void *_info) {
   /* Do more than just print a warning ? */
   if (nans_found > 0 && info->action_if_found && gdata.dim > 0) {
     if (info->NaNmask && gtype == CCTK_GF &&
-        info->bitmask < int(8 * sizeof(CCTK_INT))) {
+        next_bitnum < int(8 * sizeof(CCTK_INT))) {
       CCTK_VWarn(1, __LINE__, __FILE__, CCTK_THORNSTRING,
                  "There were %d NaN/Inf value(s) found in variable '%s' "
                  "(NaNmask bitfield %d)",
-                 (int)nans_found, fullname, info->bitmask);
+                 (int)nans_found, fullname, next_bitnum);
     } else {
       CCTK_VWarn(1, __LINE__, __FILE__, CCTK_THORNSTRING,
                  "There were %d NaN/Inf value(s) found in variable '%s'",
                  (int)nans_found, fullname);
     }
   }
-  /* check if the (global) bitmask needs to be incremented */
-  if (info->NaNmask && gtype == CCTK_GF &&
-      info->bitmask < int(8 * sizeof(CCTK_INT))) {
-    sum_handle = CCTK_ReductionArrayHandle("sum");
-    CCTK_ReduceLocalScalar(info->GH, -1, sum_handle, &nans_found,
-                           &global_nans_found, CCTK_VARIABLE_INT);
-    if (global_nans_found) {
-      info->bitmask++;
+  /* check if the (local so far) next_bitnum needs to be incremented */
+  if (info->NaNmask && gtype == CCTK_GF && nans_found) {
+    if (info->local_bitnums.at(vindex) < 0) {
+      info->local_bitnums[vindex] = next_bitnum;
+      if(info->next_bitnum < int(8 * sizeof(CCTK_INT))) {
+        info->next_bitnum++;
+      }
     }
   }
   info->count += nans_found;
