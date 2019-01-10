@@ -805,7 +805,7 @@ public:
   constexpr vectype(vector_t const &x) : v(x) {}
   // Hide the constructor, which is necessary in case scalar_t and
   // vector_t are the same type (e.g. if vectorization is disabled)
-  template<typename = int>
+  template <typename = void>
   explicit constexpr vectype(scalar_t const &a) : v(props::set1(a)) {}
   constexpr operator vector_t() const { return v; }
   constexpr vectype &operator=(vectype const &x) {
