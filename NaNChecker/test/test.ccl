@@ -1,0 +1,5 @@
+# really any number of ranks but 1 will produce the same results
+TEST nanmask
+{
+  NPROCS 2
+}
