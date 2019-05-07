@@ -31,7 +31,7 @@ void MPI_Get_processor_name1(char *name, int *resultlen) {
                hw.Coords[1], hw.Coords[2], hw.Coords[3], hw.Coords[4]);
   // ignoring hw.Coords[5], which is the core number inside a node
 }
-}
+} // namespace
 #define MPI_Get_processor_name MPI_Get_processor_name1
 #endif
 #endif
@@ -46,6 +46,11 @@ int omp_get_thread_num() { return 0; }
 #endif
 
 #include <hwloc.h>
+
+#if !(HWLOC_API_VERSION >= 0x00010000 && HWLOC_API_VERSION < 0x00020000)
+#error "Expected hwloc version >=1.0.0 <2.0.0"
+#endif
+
 // On a Blue Gene/Q, hwloc reports per-process hardware information
 // instead of per-node hardware information. We need to correct for
 // this.
@@ -72,7 +77,7 @@ bool is_pow2(int a) {
   }
   return true;
 }
-}
+} // namespace
 
 namespace {
 
@@ -142,7 +147,7 @@ void check_openmp() {
     CCTK_ERROR("Severe OpenMP inconsistency detected -- aborting");
   }
 }
-}
+} // namespace
 
 namespace {
 
@@ -253,7 +258,7 @@ void mpi_host_mapping_t::load() {
 }
 
 #endif
-}
+} // namespace
 
 // Inspired by code in hwloc's documentation
 
@@ -530,7 +535,7 @@ void set_bindings(hwloc_topology_t topology,
 #pragma omp barrier
   }
 }
-}
+} // namespace
 
 namespace {
 
@@ -706,7 +711,7 @@ void node_topology_info_t::load(hwloc_topology_t const &topology,
     }
   }
 }
-}
+} // namespace
 
 extern "C" CCTK_INT ST_GetNumSMTThreads() {
   return node_topology_info->num_smt_threads;
