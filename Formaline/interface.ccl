@@ -57,6 +57,27 @@ USES FUNCTION UniqueRunID
 
 
 
+##############
+# Citation API
+##############
+# Register a request citation with Formaline. "key" should be the bibtext key
+# and "item" the full bibtex item (which includes the key).
+void \
+FUNCTION Citation_RegisterRequested (CCTK_STRING IN key, CCTK_STRING IN item)
+
+PROVIDES FUNCTION Citation_RegisterRequested \
+    WITH Formaline_RegisterRequested \
+    LANGUAGE C
+
+void \
+FUNCTION Citation_RegisterSuggested (CCTK_STRING IN key, CCTK_STRING IN item)
+
+PROVIDES FUNCTION Citation_RegisterSuggested \
+    WITH Formaline_RegisterSuggested \
+    LANGUAGE C
+
+
+
 #############
 # Publish API
 #############

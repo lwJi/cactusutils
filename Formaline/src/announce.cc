@@ -46,6 +46,7 @@
 
 #include "http_Content.h"
 
+#include "citation.hh"
 #include "file.hh"
 #include "id.hh"
 #include "json_file.hh"
@@ -581,6 +582,40 @@ extern "C" void Formaline_AnnounceInitial(CCTK_ARGUMENTS) {
         }
       } // for all parameters
       stores.close_group(parameter_stores);
+    }
+
+    // All Citations
+
+    {
+      auto requested_keys = Citation::RequestedKeys();
+      ostringstream requested_keys_buf;
+      for (auto& it: requested_keys) {
+        requested_keys_buf << (requested_keys_buf.str().empty() ? "" : ",")
+                           << it;
+      }
+      stores.store("requested_citation_keys", requested_keys_buf.str().c_str());
+
+      auto requested_items = Citation::RequestedItems();
+      ostringstream requested_items_buf;
+      for (auto& it: requested_items) {
+        requested_items_buf << it << "\n";
+      }
+      stores.store("requested_citations", requested_items_buf.str().c_str());
+
+      auto suggested_keys = Citation::SuggestedKeys();
+      ostringstream suggested_keys_buf;
+      for (auto& it: suggested_keys) {
+        suggested_keys_buf << (suggested_keys_buf.str().empty() ? "" : ",")
+                           << it;
+      }
+      stores.store("suggested_citation_keys", suggested_keys_buf.str().c_str());
+
+      auto suggested_items = Citation::SuggestedItems();
+      ostringstream suggested_items_buf;
+      for (auto& it: suggested_items) {
+        suggested_items_buf << it << "\n";
+      }
+      stores.store("suggested_citations", suggested_items_buf.str().c_str());
     }
 
 #if 0
