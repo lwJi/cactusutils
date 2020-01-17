@@ -84,9 +84,11 @@ schedule GROUP NaNChecker_TakeAction at POST_RECOVER_VARIABLES after zzz_NaNChec
 
 if (setup_test) {
   STORAGE: TestGF
+  STORAGE: TestMaskGFs
 
   schedule NaNChecker_SetupTest at INITIAL
   {
     LANG:    C
+    WRITES: TestMaskGF2(all), TestMaskGF1(all)
   } "Set test grid function to NaN"
 }

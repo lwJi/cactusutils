@@ -671,6 +671,18 @@ extern "C" void NaNChecker_SetupTest(CCTK_ARGUMENTS) {
   DECLARE_CCTK_ARGUMENTS_NaNChecker_SetupTest;
 
   NaNChecker_SetVarsToNaN(cctkGH, CCTK_THORNSTRING "::TestGF");
+
+  /* set up grid functions so that different ranks will need different bit
+   * patterns for the NaN mask */
+  const int myproc = CCTK_MyProc(cctkGH);
+  char const *nangf = myproc ? CCTK_THORNSTRING "::TestMaskGF1" :
+    CCTK_THORNSTRING "::TestMaskGF2";
+  CCTK_REAL *nonnangf = myproc ? TestMaskGF2 : TestMaskGF1;
+
+  NaNChecker_SetVarsToNaN(cctkGH, nangf);
+  CCTK_LOOP3_ALL(NaNChecker_SetupTest, cctkGH, i,j,k) {
+    nonnangf[CCTK_GFINDEX3D(cctkGH, i,j,k)] = 0.;
+  } CCTK_ENDLOOP3_ALL(NaNChecker_SetupTest);
 }
 
 /********************************************************************

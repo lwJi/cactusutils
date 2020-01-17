@@ -7,7 +7,7 @@ IO::out_fileinfo  = "none"
 IO::parfile_write = "no"
 IO::out_dir = $parfile
 
-NaNChecker::check_vars = "all"
+NaNChecker::check_vars = "NaNChecker::TestGF"
 NaNChecker::check_every = 1
 NaNChecker::setup_test = "yes"
 
