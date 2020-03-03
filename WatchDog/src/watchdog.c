@@ -1,3 +1,4 @@
+#include <errno.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -8,6 +9,7 @@
 #include "cctk.h"
 #include "cctk_Arguments.h"
 #include "cctk_Parameters.h"
+#include "util_String.h"
 
 #include <pthread.h>
 
@@ -68,6 +70,17 @@ static void * patrol(void * arg) {
 void WatchDog(CCTK_ARGUMENTS) {
     DECLARE_CCTK_ARGUMENTS_WatchDog
     DECLARE_CCTK_PARAMETERS
+
+    if(!CCTK_EQUALS(alive_file, "")) {
+        FILE *fh = fopen(alive_file, "w");
+        if(fh != NULL) {
+            fprintf(fh, "Everything is fine.\n");
+            fclose(fh);
+        } else {
+            CCTK_VERROR("Could not open alive file '%s': %s.\n", alive_file,
+                        strerror(errno));
+        }
+    }
 
     pthread_mutex_lock(&mutex);
     timestamp = time(NULL);

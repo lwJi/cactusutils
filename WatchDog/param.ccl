@@ -6,3 +6,9 @@ CCTK_INT check_every "Check that the run is progressing every so many seconds" S
 {
     1:* :: "Any positive integer"
 } 3600
+
+STRING alive_file "file to update each time the code is found to make progress"
+{
+  ""   :: "do not create any file"
+  ".+" :: "any valid file name"
+} ""
