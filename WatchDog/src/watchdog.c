@@ -93,7 +93,8 @@ void WatchDog(CCTK_ARGUMENTS) {
         pthread_t dog; /* not used beyond passed to phread_ceate */
         int ierr = pthread_create(&dog, NULL, patrol, NULL);
         if(ierr) {
-            CCTK_ERROR("Dispatching watch dog thread failed");
+            CCTK_VERROR("Dispatching watch dog thread failed: %s",
+                        strerror(ierr));
         }
         first_time = false;
     }
