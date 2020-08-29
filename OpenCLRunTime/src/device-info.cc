@@ -14,6 +14,12 @@
 #include <CL/opencl.h>
 #endif
 
+// Intel 18.01 takes ~120GB of RAM to compile this file when using -O2 being
+// killed due to OOM
+#if __INTEL_COMPILER >= 1800
+#pragma GCC optimization_level 0
+#endif
+
 namespace OpenCLRunTime {
 
 // String
