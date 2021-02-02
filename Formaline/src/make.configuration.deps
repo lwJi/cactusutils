@@ -141,7 +141,7 @@ $(TARBALL_DIR)/config-Cactus.c: $(TARBALL_DIR)/config-Cactus.files $(CCTK_HOME)/
 # This dependency means that the tarball for the configuration options
 # is only updated if the flesh is actually recompiled. This does not
 # catch changes to files that do not influence the executable.
-$(TARBALL_DIR)/config-Cactus.files: $(CCTK_LIBDIR)/$(LIBNAME_PREFIX)$(CCTK_LIBNAME_PREFIX)$(FLESHLIB)$(LIBNAME_SUFFIX) $(TARBALL_DIR)/config-Cactus.ccldeps $(CONFIG)/make.thornlist
+$(TARBALL_DIR)/config-Cactus.files: $(CCTK_LIBDIR)/$(LIBNAME_PREFIX)$(CCTK_LIBNAME_PREFIX)$(FLESHLIB)$(LIBNAME_SUFFIX) $(TARBALL_DIR)/config-Cactus-ccldeps.d $(CONFIG)/make.thornlist
 	mkdir -p $(TARBALL_DIR)/configs/$(notdir $(TOP))
 	{ \
 		cd $(CONFIGS_DIR)/$(notdir $(TOP)) && \
@@ -163,13 +163,13 @@ $(TARBALL_DIR)/config-Cactus.files: $(CCTK_LIBDIR)/$(LIBNAME_PREFIX)$(CCTK_LIBNA
 	mv $@.tmp $@
 	$(RM) -rf $(TARBALL_DIR)/configs
 
--include $(TARBALL_DIR)/config-Cactus.ccldeps
+-include $(TARBALL_DIR)/config-Cactus-ccldeps.d
 # Make aborts if these dependencies vanish.  Therefore mention only files
 # here that cannot go away.
-$(TARBALL_DIR)/config-Cactus.ccldeps:
+$(TARBALL_DIR)/config-Cactus-ccldeps.d:
 	mkdir -p $(TARBALL_DIR)
 	{ \
-	        echo "$(@:%.ccldeps=%.files) \\"; \
+	        echo "$(@:%-ccldeps.d=%.files) \\"; \
 	        echo "$@: \\"; \
 	        echo " $(CCTK_HOME)/src/interface.ccl \\"; \
 	        echo " $(CCTK_HOME)/src/param.ccl \\"; \
@@ -177,7 +177,7 @@ $(TARBALL_DIR)/config-Cactus.ccldeps:
 	} > $@.tmp
 	mv $@.tmp $@
 
-.PRECIOUS: $(TARBALL_DIR)/config-Cactus.ccldeps $(TARBALL_DIR)/config-Cactus.files
+.PRECIOUS: $(TARBALL_DIR)/config-Cactus-ccldeps.d $(TARBALL_DIR)/config-Cactus.files
 .SECONDARY: $(TARBALL_DIR)/config-Cactus.c $(TARBALL_DIR)/config-Cactus.o
 
 
@@ -213,7 +213,7 @@ $(TARBALL_DIR)/flesh-Cactus.c: $(TARBALL_DIR)/flesh-Cactus.files $(CCTK_HOME)/ar
 # This dependency means that the tarball for the flesh is only updated
 # if the flesh is actually recompiled.  This does not catch changes to
 # files that do not influence the executable.
-$(TARBALL_DIR)/flesh-Cactus.files: $(CCTK_LIBDIR)/$(LIBNAME_PREFIX)$(CCTK_LIBNAME_PREFIX)$(FLESHLIB)$(LIBNAME_SUFFIX) $(TARBALL_DIR)/flesh-Cactus.ccldeps #$(CONFIG)/make.thornlist
+$(TARBALL_DIR)/flesh-Cactus.files: $(CCTK_LIBDIR)/$(LIBNAME_PREFIX)$(CCTK_LIBNAME_PREFIX)$(FLESHLIB)$(LIBNAME_SUFFIX) $(TARBALL_DIR)/flesh-Cactus-ccldeps.d #$(CONFIG)/make.thornlist
 	cd $(CCTK_HOME) && \
 	find CONTRIBUTORS COPYRIGHT Makefile lib/. src/. \
 		-name 'CVS' -prune -o \
@@ -229,13 +229,13 @@ $(TARBALL_DIR)/flesh-Cactus.files: $(CCTK_LIBDIR)/$(LIBNAME_PREFIX)$(CCTK_LIBNAM
 		-print | sed -e 's+/[.]/+/+g' > $@.tmp
 	mv $@.tmp $@
 
--include $(TARBALL_DIR)/flesh-Cactus.ccldeps
+-include $(TARBALL_DIR)/flesh-Cactus-ccldeps.d
 # Make aborts if these dependencies vanish.  Therefore mention only files
 # here that cannot go away.
-$(TARBALL_DIR)/flesh-Cactus.ccldeps:
+$(TARBALL_DIR)/flesh-Cactus-ccldeps.d:
 	mkdir -p $(TARBALL_DIR)
 	{ \
-	        echo "$(@:%.ccldeps=%.files) \\"; \
+	        echo "$(@:%-ccldeps.d=%.files) \\"; \
 	        echo "$@: \\"; \
 	        echo " $(CCTK_HOME)/src/interface.ccl \\"; \
 	        echo " $(CCTK_HOME)/src/param.ccl \\"; \
@@ -243,7 +243,7 @@ $(TARBALL_DIR)/flesh-Cactus.ccldeps:
 	} > $@.tmp
 	mv $@.tmp $@
 
-.PRECIOUS: $(TARBALL_DIR)/flesh-Cactus.ccldeps $(TARBALL_DIR)/flesh-Cactus.files
+.PRECIOUS: $(TARBALL_DIR)/flesh-Cactus-ccldeps.d $(TARBALL_DIR)/flesh-Cactus.files
 .SECONDARY: $(TARBALL_DIR)/flesh-Cactus.c $(TARBALL_DIR)/flesh-Cactus.o
 
 
@@ -279,7 +279,7 @@ $(TARBALL_DIR)/thorn-%.c: $(TARBALL_DIR)/thorn-%.files $(CCTK_HOME)/arrangements
 # This dependency means that the tarball for a thorn is only updated
 # if the thorn is actually recompiled.  This does not catch changes to
 # files that do not influence the executable.
-$(TARBALL_DIR)/thorn-%.files: $(CCTK_LIBDIR)/$(LIBNAME_PREFIX)$(CCTK_LIBNAME_PREFIX)%$(LIBNAME_SUFFIX) $(TARBALL_DIR)/thorn-%.ccldeps
+$(TARBALL_DIR)/thorn-%.files: $(CCTK_LIBDIR)/$(LIBNAME_PREFIX)$(CCTK_LIBNAME_PREFIX)%$(LIBNAME_SUFFIX) $(TARBALL_DIR)/thorn-%-ccldeps.d
 	cd $(CCTK_HOME) && \
 	find arrangements/$(filter %/$*,$(THORNS))/. \
 		-name 'data' -prune -o \
@@ -295,13 +295,13 @@ $(TARBALL_DIR)/thorn-%.files: $(CCTK_LIBDIR)/$(LIBNAME_PREFIX)$(CCTK_LIBNAME_PRE
 		-print | sed -e 's+/[.]/+/+g' > $@.tmp
 	mv $@.tmp $@
 
--include $(patsubst %,$(TARBALL_DIR)/thorn-%.ccldeps,$(notdir $(THORNS)))
+-include $(patsubst %,$(TARBALL_DIR)/thorn-%-ccldeps.d,$(notdir $(THORNS)))
 # Make aborts if these dependencies vanish.  Therefore mention only files
 # here that cannot go away.
-$(TARBALL_DIR)/thorn-%.ccldeps:
+$(TARBALL_DIR)/thorn-%-ccldeps.d:
 	mkdir -p $(TARBALL_DIR)
 	{ \
-	        echo "$(@:%.ccldeps=%.files) \\"; \
+	        echo "$(@:%-ccldeps.d=%.files) \\"; \
 	        echo "$@: \\"; \
 	        echo " $(CCTK_HOME)/arrangements/$(filter %/$*,$(THORNS))/interface.ccl \\"; \
 	        echo " $(CCTK_HOME)/arrangements/$(filter %/$*,$(THORNS))/param.ccl \\"; \
@@ -309,7 +309,7 @@ $(TARBALL_DIR)/thorn-%.ccldeps:
 	} > $@.tmp
 	mv $@.tmp $@
 
-.PRECIOUS: $(TARBALL_DIR)/thorn-%.ccldeps $(TARBALL_DIR)/thorn-%.files
+.PRECIOUS: $(TARBALL_DIR)/thorn-%-ccldeps.d $(TARBALL_DIR)/thorn-%.files
 .SECONDARY: $(TARBALL_DIR)/thorn-%.c $(TARBALL_DIR)/thorn-%.o
 
 
