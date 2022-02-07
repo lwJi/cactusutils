@@ -587,6 +587,12 @@ extern "C" void Formaline_AnnounceInitial(CCTK_ARGUMENTS) {
     // All Citations
 
     {
+      ostringstream filenamebuf;
+      filenamebuf << out_dir << "/formaline-citations.bib";
+      string const filenamestring = filenamebuf.str();
+      ofstream fil;
+      fil.open(filenamestring.c_str(), ios::trunc);
+
       auto requested_keys = Citation::RequestedKeys();
       ostringstream requested_keys_buf;
       for (auto& it: requested_keys) {
@@ -594,13 +600,7 @@ extern "C" void Formaline_AnnounceInitial(CCTK_ARGUMENTS) {
                            << it;
       }
       stores.store("requested_citation_keys", requested_keys_buf.str().c_str());
-
-      auto requested_items = Citation::RequestedItems();
-      ostringstream requested_items_buf;
-      for (auto& it: requested_items) {
-        requested_items_buf << it << "\n";
-      }
-      stores.store("requested_citations", requested_items_buf.str().c_str());
+      fil << "# requested citations: " << requested_keys_buf.str() << "\n";
 
       auto suggested_keys = Citation::SuggestedKeys();
       ostringstream suggested_keys_buf;
@@ -609,6 +609,15 @@ extern "C" void Formaline_AnnounceInitial(CCTK_ARGUMENTS) {
                            << it;
       }
       stores.store("suggested_citation_keys", suggested_keys_buf.str().c_str());
+      fil << "# suggested citations: " << requested_keys_buf.str() << "\n";
+
+      auto requested_items = Citation::RequestedItems();
+      ostringstream requested_items_buf;
+      for (auto& it: requested_items) {
+        requested_items_buf << it << "\n";
+      }
+      stores.store("requested_citations", requested_items_buf.str().c_str());
+      fil << requested_items_buf.str();
 
       auto suggested_items = Citation::SuggestedItems();
       ostringstream suggested_items_buf;
@@ -616,6 +625,9 @@ extern "C" void Formaline_AnnounceInitial(CCTK_ARGUMENTS) {
         suggested_items_buf << it << "\n";
       }
       stores.store("suggested_citations", suggested_items_buf.str().c_str());
+      fil << suggested_items_buf.str();
+
+      fil.close();
     }
 
 #if 0
