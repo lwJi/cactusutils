@@ -46,7 +46,7 @@ static const char *get_termination_file(void) {
    termination_from_file is steerable and may be changed to true at
    run time. */
 void TerminationTrigger_CreateFile(CCTK_ARGUMENTS) {
-  DECLARE_CCTK_ARGUMENTS;
+  DECLARE_CCTK_ARGUMENTS_CHECKED(TerminationTrigger_CreateFile);
   DECLARE_CCTK_PARAMETERS;
 
   FILE *file;
@@ -67,7 +67,7 @@ void TerminationTrigger_CreateFile(CCTK_ARGUMENTS) {
 }
 
 void TerminationTrigger_CheckFile(CCTK_ARGUMENTS) {
-  DECLARE_CCTK_ARGUMENTS;
+  DECLARE_CCTK_ARGUMENTS_CHECKED(TerminationTrigger_CheckFile);
   DECLARE_CCTK_PARAMETERS;
 
   FILE *file;
@@ -109,7 +109,7 @@ void TerminationTrigger_CheckFile(CCTK_ARGUMENTS) {
       CCTK_INFO("Found termination signal in termination file.  "
                 "Triggering termination...");
 
-      TerminationTrigger_TriggerTermination(CCTK_PASS_CTOC);
+      *triggered = 1;
     }
   }
 }

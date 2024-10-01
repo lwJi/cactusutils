@@ -29,7 +29,7 @@ static void signal_number_callback(CCTK_ATTRIBUTE_UNUSED void *data,
  ************************************************************************/
 #define MAX_NUM_SIGNALS 10 /* must match param.ccl */
 /* set to the signal number by signal handler */
-static int signal_caught = 0;
+static volatile int signal_caught = 0;
 static int current_signals[MAX_NUM_SIGNALS] = {0};
 static void (*old_handlers[MAX_NUM_SIGNALS])(int) = {0};
 
@@ -71,7 +71,7 @@ int TerminationTrigger_StartSignalHandler(void) {
 }
 
 void TerminationTrigger_CheckSignal(CCTK_ARGUMENTS) {
-  DECLARE_CCTK_ARGUMENTS;
+  DECLARE_CCTK_ARGUMENTS_CHECKED(TerminationTrigger_CheckSignal);
   DECLARE_CCTK_PARAMETERS;
 
   if (testsuite && current_signals[0] && cctk_iteration == 1) {
@@ -81,7 +81,7 @@ void TerminationTrigger_CheckSignal(CCTK_ARGUMENTS) {
   if(signal_caught) {
     CCTK_VInfo(CCTK_THORNSTRING,
                "Received signal '%d'. Triggering termination...", signal_caught);
-    TerminationTrigger_TriggerTermination(CCTK_PASS_CTOC);
+    *triggered = 1;
   }
 
   /* reset signal handler in case the signal we are listening to changed */

@@ -76,6 +76,6 @@ void TerminationTrigger_CheckWalltime(CCTK_ARGUMENTS) {
                "Remaining wallclock time for your job is %g minutes.  "
                "Triggering termination...",
                (double)(max_walltime * 60.0 - time / 60.0));
-    TerminationTrigger_TriggerTermination(CCTK_PASS_CTOC);
+   *triggered = 1;
   }
 }

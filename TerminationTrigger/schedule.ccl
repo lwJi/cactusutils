@@ -10,11 +10,14 @@ SCHEDULE TerminationTrigger_ParamCheck AT PARAMCHECK
 SCHEDULE TerminationTrigger_ResetTrigger AT BaseGrid
 {
   LANG: C
+  OPTIONS: global
+  WRITES: TerminationTrigger::triggered(everywhere)
 } "Clear trigger state"
 
 SCHEDULE TerminationTrigger_StartTimer AT BaseGrid
 {
   LANG: C
+  OPTIONS: global
   WRITES: TerminationTrigger::watchminutes(everywhere)
 } "Start timer"
 
@@ -28,8 +31,9 @@ SCHEDULE TerminationTrigger_ResetMinutes AT post_recover_variables
 SCHEDULE TerminationTrigger_CheckWalltime AT analysis
 {
   LANG: C
-  READS: TerminationTrigger::watchminutes(everywhere)
-  WRITES: TerminationTrigger::watchminutes(everywhere)
+  OPTIONS: global
+  READS: watchminutes
+  WRITES: watchminutes, triggered
 } "Check elapsed job walltime"
 
 SCHEDULE TerminationTrigger_StartSignalHandler AT startup
@@ -40,6 +44,8 @@ SCHEDULE TerminationTrigger_StartSignalHandler AT startup
 SCHEDULE TerminationTrigger_CheckSignal AT analysis
 {
   LANG: C
+  OPTIONS: global
+  WRITES: triggered
 } "Check if we received a termination signal"
 
 
@@ -48,10 +54,21 @@ if (create_termination_file)
   SCHEDULE TerminationTrigger_CreateFile AT BaseGrid
   {
     LANG: C
+    OPTIONS: global
   } "Create termination file"
 }
 
 SCHEDULE TerminationTrigger_CheckFile AT analysis
 {
   LANG: C
+  OPTIONS: global
+  WRITES: triggered
 } "Check termination file"
+
+SCHEDULE TerminationTrigger_TriggerTermination AT analysis AFTER TerminationTrigger_CheckFile AFTER TerminationTrigger_CheckSignal AFTER TerminationTrigger_CheckWalltime
+{
+  LANG: C
+  OPTIONS: global
+  READS: triggered
+  WRITES: triggered
+} "Trigger termination if needed"
