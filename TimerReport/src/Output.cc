@@ -518,7 +518,7 @@ int CollectTimerInfo(const cGH *restrict cctkGH, timer_stats &timers) {
   if (myproc == 0)
     all_ntimers.resize(nprocs);
 #ifdef CCTK_MPI
-  MPI_Gather(&my_ntimers, 1, MPI_INT, &all_ntimers[0], 1, MPI_INT, 0,
+  MPI_Gather(&my_ntimers, 1, MPI_INT, all_ntimers.data(), 1, MPI_INT, 0,
              MPI_COMM_WORLD);
 #else
   assert(myproc == 0);
@@ -604,11 +604,11 @@ int CollectTimerInfo(const cGH *restrict cctkGH, timer_stats &timers) {
     }
   }
 #ifdef CCTK_MPI
-  MPI_Gatherv(&my_timernames[0], my_ntimers * max_timername_length, MPI_CHAR,
-              &all_timernames[0], &name_counts[0], &name_displacements[0],
+  MPI_Gatherv(my_timernames.data(), my_ntimers * max_timername_length, MPI_CHAR,
+              all_timernames.data(), name_counts.data(), name_displacements.data(),
               MPI_CHAR, 0, MPI_COMM_WORLD);
-  MPI_Gatherv(&my_timervalues[0], my_ntimers, MPI_DOUBLE, &all_timervalues[0],
-              &all_ntimers[0], &value_displacements[0], MPI_DOUBLE, 0,
+  MPI_Gatherv(my_timervalues.data(), my_ntimers, MPI_DOUBLE, all_timervalues.data(),
+              all_ntimers.data(), value_displacements.data(), MPI_DOUBLE, 0,
               MPI_COMM_WORLD);
 #else
   assert(all_timernames.size() == my_timernames.size());
