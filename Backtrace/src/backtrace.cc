@@ -7,15 +7,19 @@
 // needed for dladdr, best at the top to avoid inconsistent includes
 #define _GNU_SOURCE 1
 
-#include "backtrace.hh"
-#include "dist.hh"
-
 #include <cctk.h>
+#include <cctk_Arguments.h>
 #include <cctk_Parameters.h>
 
 #include <cstring>
 #include <fstream>
+#include <iostream>
 #include <ostream>
+
+#include <signal.h>
+#ifdef HAVE_CAPABILITY_MPI
+#include <mpi.h>
+#endif
 
 // These are used for backtraces. HAVE_XXX requires cctk.h
 #include <sys/types.h>
@@ -34,7 +38,13 @@
 
 using namespace std;
 
-namespace CarpetLib {
+namespace Backtrace {
+
+// MPI rank information to include in backtrace (avoids call to MPI in a signal
+// handler)
+// we initialize myProc from MPI_COMM_WORLD during STARTUP and again using
+// CCTK_MyProc() during BaseGrid (in case the driver does something special)
+int myProc = -1;
 
 // Generate a stack backtrace and send it to the given output
 // stream
@@ -42,7 +52,7 @@ void generate_backtrace(ostream &stacktrace) {
   const int MAXSTACK = 100;
   static void *addresses[MAXSTACK];
 
-  stacktrace << "Backtrace from rank " << dist::rank() << " pid " << getpid()
+  stacktrace << "Backtrace from rank " << myProc << " pid " << getpid()
              << ":" << endl;
 
   int n = 0;
@@ -118,8 +128,12 @@ void write_backtrace_file(void) {
   ofstream myfile;
   stringstream ss;
 
+  // this is normally created by IOUtil but in case a SEGFAULT happens before
+  // IOUtil runs we create it here
+  CCTK_CreateDirectory(0777, out_dir);
+
   ss << out_dir << "/"
-     << "backtrace." << dist::rank() << ".txt";
+     << "backtrace." << myProc << ".txt";
   string filename = ss.str();
 
   cerr << "Writing backtrace to " << filename << endl;
@@ -134,18 +148,12 @@ void write_backtrace_file(void) {
   myfile.close();
 }
 
-} // namespace CarpetLib
-
 //////////////////////////////////////////////////////////////////////////////
-
-#include <signal.h>
-
-namespace CarpetLib {
 
 void signal_handler(int const signum) {
   pid_t const pid = getpid();
 
-  cerr << "Rank " << dist::rank() << " with PID " << pid << " "
+  cerr << "Rank " << myProc << " with PID " << pid << " "
        << "received signal " << signum << endl;
   // Restore the default signal handler
   signal(signum, SIG_DFL);
@@ -156,27 +164,35 @@ void signal_handler(int const signum) {
   kill(pid, signum);
 }
 
-void request_backtraces() {
+////////////////////////////////////////////////////////////////////////////////
+
+extern "C" int Backtrace_Setup(void) {
+#ifdef HAVE_CAPABILITY_MPI
+  if (CCTK_IsThornActive("MPI")) {
+    MPI_Comm_rank(MPI_COMM_WORLD, &myProc);
+  }
+#else
+  myProc = 0;
+#endif
+
   signal(SIGQUIT, signal_handler);
   signal(SIGILL, signal_handler);
   signal(SIGABRT, signal_handler);
   signal(SIGFPE, signal_handler);
   signal(SIGBUS, signal_handler);
   signal(SIGSEGV, signal_handler);
+
+  return 1;
 }
 
-} // namespace CarpetLib
+extern "C" void Backtrace_CaptureRank(CCTK_ARGUMENTS) {
+  myProc = CCTK_MyProc(cctkGH);
+}
 
-////////////////////////////////////////////////////////////////////////////////
-
-#include <cctk.h>
-#include <cctk_Arguments.h>
-
-namespace CarpetLib {
-
-extern "C" void CarpetLib_BacktraceTest(CCTK_ARGUMENTS) {
+extern "C" void Backtrace_BacktraceTest(CCTK_ARGUMENTS) {
   CCTK_INFO("Generating backtrace...");
   kill(0, SIGABRT);
   CCTK_WARN(CCTK_WARN_ABORT, "Backtrace test failed");
 }
-}
+
+} // namespace Backtrace

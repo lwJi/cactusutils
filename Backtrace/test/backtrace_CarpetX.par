@@ -1,0 +1,9 @@
+ActiveThorns = "
+    Backtrace
+    PUGH
+    IOUtil
+"
+
+Backtrace::test_backtrace = yes
+
+IO::out_dir = $parfile

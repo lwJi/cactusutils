@@ -1,1 +1,9 @@
 # Parameter definitions for thorn Backtrace
+
+BOOLEAN test_backtrace "Kill yourself to test the backtrace mechanism"
+{
+} "no"
+
+SHARES: IO
+
+USES CCTK_STRING out_dir

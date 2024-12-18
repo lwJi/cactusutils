@@ -1,0 +1,13 @@
+# this does not call the Backtrace code but rather CarpetLib's code
+ActiveThorns = "
+    Backtrace
+    Carpet
+    CarpetLib
+    CoordBase
+    IOUtil
+"
+
+
+Backtrace::test_backtrace = yes
+
+IO::out_dir = $parfile

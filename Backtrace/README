@@ -1,6 +1,6 @@
 Cactus Code Thorn Backtrace
-Author(s)    : Roland Haas <rhaas@illinois.edu>
-             : Erik Schnetter <eschnetter@perimeterinstitute.ca>
+Author(s)    : Erik Schnetter <eschnetter@perimeterinstitute.ca>
+             : Roland Haas <rhaas@illinois.edu>
 Maintainer(s): Roland Haas <rhaas@illinois.edu>
              : Erik Schnetter <eschnetter@perimeterinstitute.ca>
 Licence      : LGPL
@@ -8,4 +8,5 @@ Licence      : LGPL
 
 1. Purpose
 
-not documented
+This thorn produces stack traces in files backtrace.<rank>.txt when the code
+receives a deadly signal.

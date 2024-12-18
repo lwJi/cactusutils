@@ -1,1 +1,20 @@
 # Schedule definitions for thorn Backtrace
+
+schedule Backtrace_Setup AT Startup
+{
+  LANG: C
+} "Register signal handlers with operating system"
+
+schedule Backtrace_CaptureRank AT BaseGrid
+{
+  OPTIONS: meta
+  LANG: C
+} "Update captured MPI rank once driver is active"
+
+if (test_backtrace) {
+  SCHEDULE Backtrace_BacktraceTest AT Evol
+  {
+    OPTIONS: meta
+    LANG: C
+  } "Test stack backtraces"
+}

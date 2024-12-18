@@ -1,0 +1,11 @@
+ActiveThorns = "
+    Backtrace
+    CarpetX
+    IOUtil
+"
+
+Cactus::presync_mode = "mixed-error"
+
+Backtrace::test_backtrace = yes
+
+IO::out_dir = $parfile
