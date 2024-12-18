@@ -101,7 +101,10 @@
 
 % Add an abstract for this thorn's documentation
 \begin{abstract}
-
+This thorn produces stack traces in files \texttt{backtrace.<rank>.txt} when
+the code receives a deadly signal.
+It is agnostic of the driver being used and can be used with both PUGH and
+CarpetX. Carpet(Lib) already contains its own (identical) code.
 \end{abstract}
 
 % The following sections are suggestive only.
@@ -109,36 +112,90 @@
 
 \section{Introduction}
 
-\section{Physical System}
+This thorn registers signal handlers with the operating system to catch errors
+caused by illegal memory access, calls to \code{abort()}, and similar
+issues. When a signal is received it tries to output the call stack of
+functions that lead to the failure. If possible it will resolve addresses to
+symbol names and line numbers.
+
+On systems where address space randomization is used, the addresses may only
+be meaningful for the current process, though offsets to symbols will (should)
+remain meaningful and can be used with \texttt{gdb} to resolve to a line
+number.
+
+To resolve symbols the code should be compiled with \texttt{-g} and
+\texttt{-rdynamic} options (or equivalent).
 
 \section{Numerical Implementation}
 
+As of this writing the thorn captures the following signals:
+
+\begin{lstlisting}[language=C]
+  signal(SIGQUIT, signal_handler);
+  signal(SIGILL, signal_handler);
+  signal(SIGABRT, signal_handler);
+  signal(SIGFPE, signal_handler);
+  signal(SIGBUS, signal_handler);
+  signal(SIGSEGV, signal_handler);
+\end{lstlisting}
+
 \section{Using This Thorn}
 
-\subsection{Obtaining This Thorn}
+To use this thorn, it must be added to the \code{ActiveThorns} list in a
+parameter file. No parameters need (or can) be set.
 
 \subsection{Basic Usage}
 
+\begin{lstlisting}
+ActiveThorns = "Backtrace"
+\end{lstlisting}
+
+Backtrace files are named \texttt{backtrace.<rank>.txt} and are created in the
+directory pointed to by \code{IO::out\_dir}.
+
 \subsection{Special Behaviour}
+
+The thorn will capture the current MPI rank very early during the run (during
+\code{CCTK\_STARTUP}) and again once the driver has become active (during
+\code{CCTK\_BASEGRID}) to report rank numbers and name files.
+
+It will create the directory pointed to by \code{IO::out\_dir} if a backtrace
+is requested and the directory does not yet exist.
 
 \subsection{Interaction With Other Thorns}
 
-\subsection{Examples}
+This thorn uses the \code{out\_dir} parameter from thorn \texttt{IOUtil} to
+decide which directory to put backtrace file in.
 
-\subsection{Support and Feedback}
+\subsection{Example output}
+\begin{verbatim}
+Backtrace from rank 0 pid 185787:
+1. Backtrace::signal_handler(int)   [../../../../exe/cactus_backtrace(_ZN9Backtrace14signal_handlerEi+0xc4) [0x555e1fb92254]]
+2. /lib/x86_64-linux-gnu/libc.so.6(+0x3fce0) [0x7f52b1049ce0]
+3. /lib/x86_64-linux-gnu/libc.so.6(kill+0x7) [0x7f52b1049ef7]
+4. ../../../../exe/cactus_backtrace(Backtrace_BacktraceTest+0x34) [0x555e1fb91f24]
+5. ../../../../exe/cactus_backtrace(CCTK_CallFunction+0xd5) [0x555e2067c4b5]
+6. ../../../../exe/cactus_backtrace(+0x103c992) [0x555e2067c992]
+7. ../../../../exe/cactus_backtrace(+0x10433ad) [0x555e206833ad]
+8. ../../../../exe/cactus_backtrace(CCTKi_DoScheduleTraverse+0x6b) [0x555e2068356b]
+9. ../../../../exe/cactus_backtrace(+0x103c711) [0x555e2067c711]
+10. ../../../../exe/cactus_backtrace(CCTK_ScheduleTraverse+0xd2) [0x555e2067e5a2]
+11. ../../../../exe/cactus_backtrace(CCTKi_ScheduleTraverseGHExtensions+0x3c) [0x555e20671d3c]
+12. ../../../../exe/cactus_backtrace(CactusDefaultInitialise+0xb9) [0x555e2066dc59]
+13. ../../../../exe/cactus_backtrace(main+0x35) [0x555e1fa0dea5]
+14. /lib/x86_64-linux-gnu/libc.so.6(+0x29d68) [0x7f52b1033d68]
+15. /lib/x86_64-linux-gnu/libc.so.6(__libc_start_main+0x85) [0x7f52b1033e25]
+16. ../../../../exe/cactus_backtrace(_start+0x21) [0x555e1fb871d1]
 
-\section{History}
-
-\subsection{Thorn Source Code}
-
-\subsection{Thorn Documentation}
+The hexadecimal addresses in this backtrace can also be interpreted
+with a debugger (e.g. gdb), or with the 'addr2line' (or 'gaddr2line')
+command line tool: 'addr2line -e cactus_sim <address>'.
+\end{verbatim}
 
 \subsection{Acknowledgements}
 
-
-\begin{thebibliography}{9}
-
-\end{thebibliography}
+This thorn is almost entirely identical to \texttt{CarpetLib}'s implementation
+found in git hash 99c01a802.
 
 % Do not delete next line
 % END CACTUS THORNGUIDE
