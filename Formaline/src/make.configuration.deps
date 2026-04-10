@@ -52,7 +52,7 @@ $(FRM-LIB): $(FRM-OBJS)
 #	$(AR) $(ARFLAGS) $@ $^
 	$(MAKE) -f $(MAKE_DIR)/make.configuration $(FRM-LIB).objectlist.custom
 	$(RM) $@ 2>/dev/null
-	xargs -n $(FRM-OBJS-words-max) $(AR) $(ARFLAGS) $@ < $(FRM-LIB).objectlist
+	xargs $(AR) $(ARFLAGS) $@ < $(FRM-LIB).objectlist
 	$(RM) $(FRM-LIB).objectlist
 	if test "x$(USE_RANLIB)" = "xyes"; then $(RANLIB) $(RANLIBFLAGS) $@; fi
 	@echo $(DIVIDER)
@@ -320,45 +320,9 @@ $(TARBALL_DIR)/thorn-%.ccldeps:
 
 # Create a file containing the names of all object files.
 
-# Since the list may be too long to be passed to a shell, it is split
-# into a set of rules which add lines to a file.  This file can later
-# be used via xargs.
-
-FRM-OBJS-words = $(words $(FRM-OBJS))
-
-ifeq ($(shell uname),AIX)
-# Be conservative about the maximum number of objects that can be
-# handled at once.  AIX has a command line length limit of about
-# 32000.  Each object's path name may be about 100 characters long.
-FRM-OBJS-words-max = 200
-else ifneq ($(findstring CYGWIN_NT,$(shell uname)),)
-# Ditto
-FRM-OBJS-words-max = 200
-else
-# Assume that the system has no limit to speak of
-FRM-OBJS-words-max = 10000
-endif
-
-ifeq ($(shell test $(FRM-OBJS-words) -le $(FRM-OBJS-words-max) && echo 1), 1)
-
-# The list is short.  Create the file directly, which is faster.
-
 .PHONY: $(FRM-LIB).objectlist.custom
 $(FRM-LIB).objectlist.custom:
-	echo $(FRM-OBJS) $(FRM-OBJS-other) > $(FRM-LIB).objectlist
-
-else
-
-# The list is long.  Create it one object file a time.
-
-.PHONY: $(FRM-LIB).objectlist.custom
-$(FRM-LIB).objectlist.custom:
-	$(shell : > $(FRM-LIB).objectlist.tmp)
-	$(foreach obj, $(FRM-OBJS) $(FRM-OBJS-other), $(shell echo $(obj) >> $(FRM-LIB).objectlist.tmp))
-	mv $(FRM-LIB).objectlist.tmp $(FRM-LIB).objectlist
-
-endif
-
+	$(file >$(FRM-LIB).objectlist, $(wildcard $(FRM-OBJS) $(FRM-OBJS-other)))
 
 
 ###############################################################################
