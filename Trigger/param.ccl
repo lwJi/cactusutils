@@ -74,7 +74,7 @@ STRING Trigger_Steered_Parameter_Name[10] "parameter name to be changed" STEERAB
 
 STRING Trigger_Steered_Parameter_Value[10] "parameter value to be changed to" STEERABLE=ALWAYS
 {
-  ".+" :: "parameter value"
+  ".+" :: "parameter value or formula"
   "^$" :: "can be empty"
 } ""
 
@@ -91,7 +91,7 @@ INT Trigger_Steered_Scalar_Index[10] "Scalar index to be changed" STEERABLE=ALWA
 
 STRING Trigger_Steered_Scalar_Value[10] "Scalar value to be changed to" STEERABLE=ALWAYS
 {
-  ".+" :: "scalar value"
+  ".+" :: "scalar value or formula"
   "^$" :: "can be empty"
 } ""
 

@@ -5,6 +5,9 @@
 #include "cctk_WarnLevel.h"
 #include "cctk_Arguments.h"
 #include "cctk_Parameters.h"
+#include "util_String.h"
+
+#include "eval.h"
 
 /* Trigger GH extension structure */
 typedef struct
@@ -303,7 +306,6 @@ void Trigger_Check(CCTK_ARGUMENTS)
   DECLARE_CCTK_ARGUMENTS
   DECLARE_CCTK_PARAMETERS
   int varindex, ret, i;
-  char *valstr;
   TriggerGH *my_GH;
   my_GH = (TriggerGH*)CCTK_GHExtension(cctkGH, "Trigger");
   if (my_GH->debug)
@@ -330,18 +332,97 @@ void Trigger_Check(CCTK_ARGUMENTS)
     {
       if (Trigger_TriggerFullFilled(cctkGH, i))
       {
-        valstr=CCTK_ParameterValString(Trigger_Steered_Parameter_Name[i],
-                                       Trigger_Steered_Parameter_Thorn[i]);
-        if (CCTK_EQUALS(valstr, Trigger_Steered_Parameter_Value[i]))
-          free(valstr);
-        else
+        int type;
+        const void *oldparamval = CCTK_ParameterGet(Trigger_Steered_Parameter_Name[i],
+                                                    Trigger_Steered_Parameter_Thorn[i],
+                                                    &type);
+        int steer = 0;
+        char *paramval = NULL;
+
+        switch (type)
         {
-          free(valstr);
+          int ierr;
+          CCTK_REAL rval;
+          CCTK_INT ival;
+
+          case PARAMETER_REAL:
+            ierr = Trigger_EvaluateFormula(Trigger_Steered_Parameter_Value[i],
+                                           cctkGH,CCTK_VARIABLE_REAL,&rval);
+            if (ierr == 0)
+            {
+              if ((*(CCTK_REAL*)oldparamval != rval))
+              {
+                steer = 1;
+                ierr = Util_asprintf(&paramval,"%.18e",rval) == 0;
+              }
+            }
+            if (ierr)
+              CCTK_VWarn(0, __LINE__, __FILE__, CCTK_THORNSTRING,
+                        "Could not interpret '%s' as floating point number or out of memory setting parameter: %d",
+                        Trigger_Steered_Parameter_Value[i],ierr);
+            break;
+          case PARAMETER_INT:
+            ierr = Trigger_EvaluateFormula(Trigger_Steered_Parameter_Value[i],
+                                           cctkGH,CCTK_VARIABLE_INT,&ival);
+            if (ierr == 0)
+            {
+              if ((*(CCTK_INT*)oldparamval != ival))
+              {
+                steer = 1;
+                ierr = Util_asprintf(&paramval,"%d",ival) == 0;
+              }
+            }
+            if (ierr)
+              CCTK_VWarn(0, __LINE__, __FILE__, CCTK_THORNSTRING,
+                        "Could not interpret '%s' as integer number or out of memory setting parameter: %d",
+                        Trigger_Steered_Parameter_Value[i],ierr);
+            break;
+          case PARAMETER_BOOLEAN:
+            ierr = Trigger_EvaluateFormula(Trigger_Steered_Parameter_Value[i],
+                                           cctkGH,CCTK_VARIABLE_INT,&ival);
+            if (ierr == 0)
+            {
+              if ((*(CCTK_INT*)oldparamval != ival))
+              {
+                steer = 1;
+                ierr = Util_asprintf(&paramval,"%d",ival!=0) == 0;
+              }
+            }
+            if (ierr)
+              CCTK_VWarn(0, __LINE__, __FILE__, CCTK_THORNSTRING,
+                        "Could not interpret '%s' as boolean or out of memory setting parameter: %d",
+                        Trigger_Steered_Parameter_Value[i],ierr);
+            break;
+          case PARAMETER_STRING:
+          case PARAMETER_KEYWORD:
+          case PARAMETER_SENTENCE:
+            if (! CCTK_Equals(Trigger_Steered_Parameter_Value[i], oldparamval))
+            {
+                steer = 1;
+                paramval = (char*)Trigger_Steered_Parameter_Value[i];
+            }
+            break;
+          default:
+            if (! CCTK_Equals(Trigger_Steered_Parameter_Value[i],
+                              CCTK_ParameterValString(Trigger_Steered_Parameter_Name[i],
+                                                      Trigger_Steered_Parameter_Thorn[i])))
+            {
+                steer = 1;
+                paramval = (char*)Trigger_Steered_Parameter_Value[i];
+            }
+            break;
+        }
+
+        if (steer)
+        {
           if (my_GH->debug)
             CCTK_VINFO("Steering parameter");
           ret=CCTK_ParameterSet(Trigger_Steered_Parameter_Name[i],
                                 Trigger_Steered_Parameter_Thorn[i],
-                                Trigger_Steered_Parameter_Value[i]);
+                                paramval);
+          if(paramval != NULL && paramval != Trigger_Steered_Parameter_Value[i])
+            free(paramval);
+
           switch(ret)
           {
             case  0: my_GH->trigger_count[i] += 1;
@@ -366,6 +447,8 @@ void Trigger_Check(CCTK_ARGUMENTS)
         int type = CCTK_VarTypeI(my_GH->steered_scalar[i]);
         if (type == CCTK_VARIABLE_REAL)
         {
+          CCTK_REAL value;
+
           CCTK_REAL *myVar = (CCTK_REAL *)(CCTK_VarDataPtrI(cctkGH,0,my_GH->steered_scalar[i]));
           if (myVar == NULL)
           {
@@ -373,19 +456,48 @@ void Trigger_Check(CCTK_ARGUMENTS)
                         CCTK_FullName(my_GH->steered_scalar[i]));
           }
 
-          myVar[Trigger_Steered_Scalar_Index[i]] = atof(Trigger_Steered_Scalar_Value[i]);
-          my_GH->trigger_count[i] += 1;
+          const int ierr = Trigger_EvaluateFormula(Trigger_Steered_Scalar_Value[i],
+                                                  cctkGH,CCTK_VARIABLE_REAL,&value);
+          if (ierr == 0)
+          {
+            if (my_GH->debug)
+                CCTK_VInfo(CCTK_THORNSTRING, "Steering to %g\n", value);
+            myVar[Trigger_Steered_Scalar_Index[i]] = value;
+            my_GH->trigger_count[i] += 1;
+          }
+          else
+          {
+            CCTK_VWarn(0, __LINE__, __FILE__, CCTK_THORNSTRING,
+                      "Could not interpret '%s' as floating point number: %d",
+                      Trigger_Steered_Scalar_Value[i],ierr);
+          }
+
         }
         else if (type == CCTK_VARIABLE_INT)
         {
+          CCTK_INT value;
+
           CCTK_INT *myVar = (CCTK_INT *)(CCTK_VarDataPtrI(cctkGH,0,my_GH->steered_scalar[i]));
           if (myVar == NULL)
           {
             CCTK_VERROR("Variable '%s' has no storage",
                        CCTK_FullVarName(my_GH->steered_scalar[i]));
           }
-          myVar[Trigger_Steered_Scalar_Index[i]] = atoi(Trigger_Steered_Scalar_Value[i]);
-          my_GH->trigger_count[i] += 1;
+          const int ierr = Trigger_EvaluateFormula(Trigger_Steered_Scalar_Value[i],
+                                                  cctkGH,CCTK_VARIABLE_INT,&value);
+          if (ierr == 0)
+          {
+            if (my_GH->debug)
+                CCTK_VInfo(CCTK_THORNSTRING, "Steering to %d\n", value);
+            myVar[Trigger_Steered_Scalar_Index[i]] = value;
+            my_GH->trigger_count[i] += 1;
+          }
+          else
+          {
+            CCTK_VWarn(0, __LINE__, __FILE__, CCTK_THORNSTRING,
+                      "Could not interpret '%s' as integer number: %d",
+                      Trigger_Steered_Scalar_Value[i],ierr);
+          }
         }
         else
           CCTK_WARN(0, "Cannot handle other types than CCTK_REAL and CCTK_INT");
