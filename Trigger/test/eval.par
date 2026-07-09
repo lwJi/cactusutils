@@ -1,0 +1,46 @@
+!DESC "test triggers"
+
+# Required thorns
+
+ActiveThorns = "time pugh pughreduce pughslab boundary cartgrid3d ioascii ioutil iobasic localreduce nanchecker coordbase symbase trigger"
+
+cactus::cctk_initial_time = 0.0
+cactus::cctk_itlast       = 10
+
+# Output
+
+IO::out_fileinfo="none"
+IO::out_dir = $parfile
+
+IOBasic::outScalar_every = 1
+IOBasic::outScalar_reductions = "minimum"
+IOBasic::outScalar_vars  = "trigger::trigger_cctk_time"
+
+trigger::Trigger_Number              = 2
+
+trigger::Trigger_Checked_Variable[0] = "trigger::trigger_cctk_iteration"
+trigger::Trigger_Relation[0]         = ">"
+trigger::Trigger_Checked_Value[0]    = -1
+trigger::Trigger_Reduction[0]        = "maximum"
+trigger::Trigger_Reaction[0]         = "steerscalar"
+trigger::Trigger_Steered_Scalar[0]   = "trigger::trigger_cctk_time"
+trigger::Trigger_Steered_Scalar_Index[0]= 0
+trigger::Trigger_Steered_Scalar_Value[0]= "42*trigger::trigger_cctk_iteration"
+
+trigger::Trigger_Checked_Variable[1] = "trigger::trigger_cctk_iteration"
+trigger::Trigger_Relation[1]         = ">"
+trigger::Trigger_Checked_Value[1]    = 5
+trigger::Trigger_Reduction[1]        = "maximum"
+trigger::Trigger_Reaction[1]         = "steerparam"
+trigger::Trigger_Steered_Parameter_Thorn[1]= "iobasic"
+trigger::Trigger_Steered_Parameter_Name[1]= "outScalar_every"
+trigger::Trigger_Steered_Parameter_Value[1]= "2*1"
+
+
+trigger::Trigger_Debug               = 1
+
+##################################################################
+
+
+# do not use the new scheme for names of output files
+IO::new_filename_scheme = "no"
