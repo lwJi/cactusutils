@@ -12,3 +12,8 @@ KEYWORD thread_layout "How to lay out threads over cores" STEERABLE=recover
   "dense" :: "Pack threads on as few NUMA nodes/cores as possible"
   "loose" :: "Spread threads over all NUMA nodes/cores"
 } "dense"
+
+# Whether to restrict to performance cores on a heterogeneous CPU is a
+# property of the machine, not of the simulation, so it is controlled
+# by the environment variable CACTUS_USE_PERFORMANCE_CORES_ONLY
+# ("yes"/"no"/"auto", default "auto") rather than by a parameter here.

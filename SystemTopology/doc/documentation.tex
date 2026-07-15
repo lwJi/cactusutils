@@ -87,7 +87,7 @@
 % the date your document was last changed, if your document is in CVS,
 % please use:
 %    \date{$ $Date$ $}
-\date{April 26 2015}
+\date{July 13 2026}
 
 \maketitle
 
@@ -99,39 +99,418 @@
 
 % Add an abstract for this thorn's documentation
 \begin{abstract}
-
+  At startup, report the MPI process/host mapping and the node's
+  hardware topology (cores, PUs, caches, NUMA memory) as discovered by
+  \emph{hwloc}, optionally bind OpenMP threads (and their memory
+  allocations) to specific processing units, and expose the discovered
+  topology to other thorns through aliased functions.
 \end{abstract}
-
-% The following sections are suggestive only.
-% Remove them or add your own.
 
 \section{Introduction}
 
-\section{Physical System}
+This thorn runs once, early during startup (scheduled at
+\texttt{AT startup AFTER hwloc\_startup BEFORE Driver\_Startup}), and
+performs three tasks:
+\begin{enumerate}
+\item It determines how MPI processes are distributed across physical
+  hosts (which processes share a host, and in what order), and prints
+  this mapping.
+\item It queries \emph{hwloc} for the local node's hardware topology
+  (cores, hardware threads / PUs, cache hierarchy, NUMA nodes) and
+  prints it, together with a report of which \emph{hwloc} features
+  (binding, discovery) are actually supported on this system.
+\item Optionally, it binds each OpenMP thread of each MPI process on a
+  host to a specific processing unit (PU), and binds that thread's
+  memory allocations to the same PU's local memory.
+\end{enumerate}
+The topology information gathered here is not only diagnostic output:
+it is also captured and made available to other thorns (see
+section~\ref{sec:interaction}), which use it to make cache- and
+NUMA-aware decisions about loop tiling and memory allocation.
 
-\section{Numerical Implementation}
+This thorn requires the \texttt{hwloc} and \texttt{MPI} capabilities
+(see \texttt{configuration.ccl}).
+
+\section{Node and MPI Topology Discovery}
+
+Discovery proceeds in two independent steps.
+
+\paragraph{MPI process/host mapping.} Each MPI process determines its
+hostname (via \texttt{MPI\_Get\_processor\_name}) and these are
+gathered on the global root process, which groups processes into
+hosts by matching hostnames, and computes, for every process: which
+host it runs on, how many processes run on that host, and this
+process's position (rank) among them. This mapping is then scattered
+back to every process. Each consumer of this mapping (see below) that
+also needs per-thread information -- e.g. to lay out OpenMP threads
+across a host's processes -- combines it locally with its own
+\texttt{omp\_get\_max\_threads()} (or \texttt{omp\_get\_num\_threads()}),
+assuming every rank on a host runs the same number of OpenMP threads
+(see the ``all nodes identical'' assumption below); no further MPI
+communication is needed for this.
+
+\paragraph{Hardware topology.} \emph{hwloc} is used to enumerate cores,
+PUs (hardware threads), the cache hierarchy, and NUMA/machine memory
+nodes. From this, the thorn derives:
+\begin{itemize}
+\item the number of PUs per core (the hardware SMT-thread count), and
+\item the number of SMT threads actually used, i.e.
+  $\lceil (\text{total OpenMP threads on this host}) /
+  (\text{number of cores}) \rceil$.
+\end{itemize}
+If the process is already confined to a subset of the node's PUs --
+for example by a job scheduler's cpuset/cgroup, or by the MPI
+launcher's own affinity settings (\texttt{srun --cpu-bind},
+\texttt{mpirun --bind-to}, etc.) -- the \emph{hwloc} topology is
+restricted to that subset before any of the above is computed, so that
+core/PU counts, bindings, and cache/memory sizes all reflect only the
+resources actually available to this process.
+
+On a heterogeneous (hybrid) CPU -- one with distinct ``performance''
+and ``efficiency'' core kinds, such as recent Intel P-core/E-core
+parts or ARM big.LITTLE designs -- the topology can be further
+restricted to the highest-efficiency core kind only, using
+\emph{hwloc}'s \texttt{cpukinds} API (see the
+\texttt{CACTUS\_USE\_PERFORMANCE\_CORES\_ONLY} environment variable
+below). This restriction is applied on top of, and intersected with,
+any scheduler/launcher restriction already in effect above.
+
+This thorn assumes that \textbf{all nodes used in a run are
+identical}. Consequently, only the global root process (MPI rank~0)
+actually queries \emph{hwloc}'s \texttt{cpukinds} API; the outcome
+(whether performance cores could be reliably identified, and if so,
+their PU set) is broadcast via MPI to every other rank, which then
+each locally intersects it with their own scheduler/launcher
+restriction from above. This avoids every process on every node
+redundantly repeating the same query, but means that on a genuinely
+heterogeneous cluster (where some nodes are hybrid CPUs and others are
+not, or different nodes have different performance-core layouts), the
+root node's detection would be incorrectly applied to every other
+node.
+
+\section{Thread and Memory Binding}
+
+If enabled (see the \texttt{set\_thread\_bindings} parameter), each
+OpenMP thread is bound to exactly one PU using the following layout
+algorithm:
+\begin{itemize}
+\item If \texttt{thread\_layout = "dense"}, threads are packed onto as
+  few cores as possible (filling all SMT threads of a core before
+  moving to the next core).
+\item If \texttt{thread\_layout = "loose"}, threads are spread evenly
+  across all available cores.
+\end{itemize}
+Threads are numbered consecutively across all MPI processes on a host
+(using the per-rank thread offsets described above), then mapped onto
+cores and PUs; if there are more threads than PUs, cores/PUs are
+oversubscribed rather than left unbound. When a PU binding succeeds,
+the thorn additionally binds that thread's future memory allocations
+to the same PU's local memory, if \emph{hwloc} reports support for
+this on the current system.
+
+The memory binding \emph{policy} is treated as a property of the
+machine, not of the simulation, and is therefore controlled by the
+environment variable \texttt{CACTUS\_MEMBIND\_POLICY} rather than a
+Cactus parameter (following the convention of e.g.
+\texttt{CACTUS\_NUM\_THREADS}):
+\begin{itemize}
+\item \texttt{"bind"} (the default, used if the variable is unset):
+  strictly bind allocations to the thread's local NUMA node; if that
+  node is full, allocation fails rather than silently using a
+  different node.
+
+  \emph{Use this when} each thread's memory footprint is dominated by
+  data it privately owns and repeatedly accesses -- the common case for
+  a Carpet/CarpetX run, where each OpenMP thread mostly reads and
+  writes grid-function data within its own loop tiles (see
+  section~\ref{sec:interaction}) -- and per-thread memory usage is
+  reasonably balanced across the node, so no single NUMA node is likely
+  to run out. This is the right default for most production runs: it
+  gives deterministic, guaranteed locality rather than relying on the
+  OS's first-touch heuristic, which can be defeated by memory pools,
+  pre-faulted pages, or a cluster-wide NUMA policy set by an
+  administrator or container runtime.
+\item \texttt{"firsttouch"}: memory is placed on the NUMA node of
+  whichever thread first touches it (this approximates, and makes
+  explicit, the usual OS default behavior with no binding at all).
+
+  \emph{Use this when} you want the same intended locality as
+  \texttt{"bind"}, but are not confident that per-thread memory usage
+  is well balanced (e.g. a run with a very uneven domain decomposition
+  or adaptive mesh refinement concentrating much more grid data on some
+  threads/cores than others). Unlike \texttt{"bind"}, a full local node
+  degrades performance instead of aborting the run outright. The
+  tradeoff is that first-touch placement depends on which thread
+  genuinely touches a page \emph{first}; if grid-function memory is
+  pre-allocated or pre-zeroed by a single setup thread before the
+  worker threads that will actually use it begin their loop tiles, the
+  intended locality can be lost regardless of this setting.
+\item \texttt{"interleave"}: memory pages are spread round-robin
+  across NUMA nodes; useful for large structures deliberately shared
+  across sockets.
+
+  \emph{Use this when} a particular allocation is genuinely read (or
+  written) roughly equally by threads across multiple NUMA nodes, so no
+  single ``local'' placement is meaningful -- for example, a large
+  equation-of-state or interpolation table shared by all threads on a
+  host. Interleaving spreads the aggregate memory-bandwidth demand
+  across all memory controllers on the node instead of concentrating it
+  on one, which would otherwise become a bottleneck (and would not
+  actually be ``local'' to most of the threads hammering it anyway).
+  This is a niche choice, not appropriate for the bulk of
+  per-thread grid-function storage.
+\item \texttt{"none"}: do not set any memory binding at all (CPU
+  binding, if enabled, is unaffected).
+
+  \emph{Use this when} diagnosing a performance or stability issue and
+  you want to isolate whether CPU pinning or memory binding is
+  responsible, when an external tool (\texttt{numactl}, a container
+  runtime, or a job scheduler) already manages memory placement for the
+  job and you do not want this thorn's choice to conflict with it, or
+  on a system where \emph{hwloc}'s memory-binding support is unreliable
+  even though CPU-binding support works.
+\end{itemize}
+If \emph{hwloc} reports that the requested policy is not supported on
+this system, the thorn logs a warning and does not set memory bindings
+for this run. An unrecognized value aborts with an error.
 
 \section{Using This Thorn}
 
 \subsection{Obtaining This Thorn}
 
+This thorn is part of the \texttt{CactusUtils} arrangement and is
+obtained together with the rest of the Cactus Einstein Toolkit
+checkout.
+
 \subsection{Basic Usage}
+
+Simply activate the thorn; it requires no scheduling from other
+thorns and runs automatically once at startup. Its behaviour is
+controlled by two steerable parameters:
+\begin{itemize}
+\item \texttt{set\_thread\_bindings} (\texttt{"yes"} / \texttt{"no"} /
+  \texttt{"auto"}, default \texttt{"auto"}): whether to set thread-CPU
+  affinity at all. \texttt{"auto"} is the right choice for most runs.
+  Use \texttt{"no"} when the job launcher's own affinity flags
+  (\texttt{srun --cpu-bind}, \texttt{mpirun --bind-to}) already do what
+  you want and this thorn should not touch it, or when isolating
+  whether CPU pinning itself is responsible for an observed
+  performance or correctness issue. Use \texttt{"yes"} to force this
+  thorn's own layout even in cases where it would otherwise detect an
+  existing restriction and back off (see ``\texttt{"auto"} binding''
+  below) -- only appropriate if you know that restriction is still
+  compatible with this thorn's layout arithmetic (e.g. a plain,
+  contiguous per-rank slice of the node).
+\item \texttt{thread\_layout} (\texttt{"dense"} / \texttt{"loose"},
+  default \texttt{"dense"}): how threads are laid out over cores when
+  bindings are set. This only matters when a host's total thread count
+  (summed over all ranks on it) is \emph{less} than its core count --
+  otherwise dense and loose produce the same layout. \texttt{"dense"}
+  packs threads onto as few cores (and ideally as few NUMA nodes) as
+  possible; choose this when several ranks share a host and each
+  should stay confined to its own socket (avoiding cross-socket memory
+  traffic for that rank's own data), or when leaving cores fully idle
+  is desirable (e.g. for power/thermal reasons, or to leave headroom
+  for co-located non-Cactus processes). \texttt{"loose"} spreads
+  threads across all available cores/sockets; choose this for a single
+  under-subscribed rank that should exploit as much aggregate memory
+  bandwidth and cache capacity as possible, accepting the resulting
+  cross-socket NUMA effects within that rank's own address space.
+\end{itemize}
+Two further settings are controlled by environment variables rather
+than parameters, since they describe properties of the machine rather
+than of the simulation (see the sections referenced below for details):
+\begin{itemize}
+\item \texttt{CACTUS\_USE\_PERFORMANCE\_CORES\_ONLY} (\texttt{"yes"} /
+  \texttt{"no"} / \texttt{"auto"}, default \texttt{"auto"}): whether to
+  restrict this thorn's view of the node -- core/PU counts, cache
+  info, and thread bindings -- to performance cores only, on a
+  heterogeneous CPU. \texttt{"auto"} is the right choice for most runs:
+  it uses performance cores when it can identify them and degrades
+  gracefully otherwise. Use \texttt{"yes"} when you need a hard
+  guarantee that efficiency cores are never silently included -- e.g.
+  for reproducible benchmarking, or on a shared workstation/laptop
+  where mixing in much slower efficiency cores would badly skew
+  load-balancing assumptions -- and would rather the run abort at
+  startup than proceed with an uncertain core set. Use \texttt{"no"}
+  when you deliberately want every core, efficiency cores included,
+  such as for a lower-priority or embarrassingly parallel run where
+  raw throughput matters more than uniform per-thread performance.
+\item \texttt{CACTUS\_MEMBIND\_POLICY} (\texttt{"bind"} /
+  \texttt{"firsttouch"} / \texttt{"interleave"} / \texttt{"none"},
+  default \texttt{"bind"}): the NUMA memory binding policy applied
+  alongside CPU bindings.
+\end{itemize}
 
 \subsection{Special Behaviour}
 
+\begin{itemize}
+\item \textbf{\texttt{"auto"} binding.} In \texttt{"auto"} mode, the
+  thorn only sets thread bindings if this process was \emph{not}
+  already confined to a subset of the node by an external mechanism
+  (job scheduler, cgroup, or launcher affinity flags). If such a
+  restriction is detected, \texttt{"auto"} behaves like \texttt{"no"},
+  since the thorn's own whole-node layout arithmetic does not apply to
+  a partial-node allocation and would only fight whatever affinity has
+  already been set. Use \texttt{set\_thread\_bindings = "yes"} to
+  force the thorn's own layout regardless.
+\item \textbf{Uniform thread counts.} Since all nodes are assumed
+  identical, every rank on a host is assumed to run the same number of
+  OpenMP threads; this count is used directly (no MPI communication is
+  needed to determine it) to compute each rank's thread offset and the
+  host's total thread count.
+\item \textbf{Performance-core restriction.} With
+  \texttt{CACTUS\_USE\_PERFORMANCE\_CORES\_ONLY=auto} (the default), the
+  thorn restricts its view of the node to performance cores only if it
+  can reliably identify them via \emph{hwloc}'s \texttt{cpukinds} API
+  (requires \emph{hwloc} $\geq$~2.4.0 and operating-system/hardware
+  support for reporting core efficiency); otherwise it quietly falls
+  back to using all cores. With \texttt{=yes}, the same restriction is
+  mandatory: if performance cores cannot be reliably identified
+  (unsupported \emph{hwloc} version, a homogeneous CPU, an unknown
+  efficiency ranking, or a scheduler/launcher restriction that excludes
+  all performance cores), the run aborts with an error rather than
+  silently using efficiency cores. \texttt{=no} disables this
+  restriction entirely.
+\item \textbf{Binding report.} The ``Thread CPU bindings'' report is
+  collected and printed by global MPI rank~0, which is always process~0
+  on host~0 (host~0 is defined as whichever host rank~0 happens to run
+  on, and rank~0 -- being the smallest possible rank -- is always the
+  smallest, i.e. ``process~0'', on whatever host it shares).
+\item \textbf{Missing hwloc support.} If \emph{hwloc} reports that it
+  cannot query or set CPU/memory bindings on this system (see the
+  ``Topology support'' report), the corresponding step is skipped with
+  an informational message rather than failing.
+\end{itemize}
+
 \subsection{Interaction With Other Thorns}
+\label{sec:interaction}
+
+This thorn provides four aliased functions (see
+\texttt{interface.ccl}) that other thorns use to make cache- and
+NUMA-aware decisions:
+\begin{itemize}
+\item \texttt{GetNumSMTThreads} / \texttt{GetMaxSMTThreads} -- the
+  number of SMT threads in use and the hardware maximum. Used by
+  \texttt{Carpet/LoopControl} to size the innermost loop tiles so that
+  hyperthread siblings do not needlessly duplicate cache-line work.
+\item \texttt{GetCacheInfo1} -- sizes, line sizes, and strides of each
+  cache level, plus the size of local and global (NUMA) memory. Used by
+  \texttt{Carpet/LoopControl} and \texttt{Carpet/CarpetLib} to choose
+  cache-blocking tile sizes and allocation padding/alignment, and by
+  \texttt{CactusUtils/MemSpeed} to select the array sizes used for its
+  cache/memory benchmarks.
+\item \texttt{GetMPIProcessInfo} -- the MPI process/host mapping
+  computed above. Used by \texttt{CactusUtils/MemSpeed} to restrict its
+  (expensive) benchmarks to one process per host.
+\end{itemize}
+All of these thorns query
+\texttt{CCTK\_IsFunctionAliased} before calling these functions and
+fall back to conservative defaults (e.g. one SMT thread, unknown cache
+sizes) if this thorn is not active, so activating this thorn is
+optional but recommended whenever these other thorns are in use.
 
 \subsection{Examples}
 
+Illustrative (abbreviated) startup output on a two-socket, multi-core
+node:
+\begin{verbatim}
+INFO (SystemTopology): MPI process-to-host mapping:
+This is MPI process 0 of 4
+MPI hosts:
+  0: node042
+This MPI process runs on host 0 of 1
+On this host, this is MPI process 0 of 4
+INFO (SystemTopology): Topology support:
+Discovery support:
+  discovery->pu                           : yes
+CPU binding support:
+  cpubind->set_thisthread_cpubind         : yes
+  ...
+INFO (SystemTopology): Hardware objects in this node:
+Machine L#0: (P#0)
+  Package L#0: (P#0)
+    Core L#0: (P#0)
+      PU L#0: (P#0)
+      PU L#1: (P#16)
+  ...
+INFO (SystemTopology): Setting thread CPU bindings:
+INFO (SystemTopology): Extracting CPU/cache/memory properties:
+  There are 2 PUs per core (aka hardware SMT threads)
+  There are 1 threads per core (aka SMT threads used)
+  Cache D1 cache has type "data" depth 1
+    size 32768 linesize 64 associativity 8 stride 4096, for 2 PUs
+  ...
+\end{verbatim}
+
+On a heterogeneous (hybrid) CPU, with
+\texttt{CACTUS\_USE\_PERFORMANCE\_CORES\_ONLY} unset, \texttt{auto}, or
+\texttt{yes}, an additional message appears before the topology is
+reported, and all subsequent core/PU/cache counts reflect performance
+cores only:
+\begin{verbatim}
+INFO (SystemTopology): Detected a heterogeneous (hybrid) CPU;
+restricting to performance cores only
+\end{verbatim}
+
 \subsection{Support and Feedback}
+
+Contact the maintainer listed in the \texttt{README} file, or use the
+Cactus/Einstein Toolkit support channels.
+
+\section{Caveats}
+
+\begin{itemize}
+\item The quality of the ``dense''/``loose'' layout depends on
+  \emph{hwloc}'s logical ordering of cores actually reflecting NUMA
+  locality (adjacent logical indices on the same socket), which holds
+  for essentially all common systems but is not guaranteed by
+  \emph{hwloc} itself.
+\item \texttt{GetCacheInfo1} may report a cache line size of zero if
+  \emph{hwloc} cannot determine it (seen inside some virtual machines,
+  containers, or on less common architectures); callers should treat
+  this as ``unknown'' rather than a literal zero-byte line.
+\item Distance-matrix reporting requires \emph{hwloc} version~2.0 or
+  later; on older \emph{hwloc} installations this part of the report is
+  omitted.
+\item Performance-core detection requires \emph{hwloc} version~2.4.0 or
+  later, \emph{and} an operating system/hardware combination that
+  exposes core efficiency information to \emph{hwloc} (e.g. via
+  \texttt{cpu\_capacity} in Linux \texttt{sysfs}, or natively on
+  Windows~10 and macOS). On other systems, \texttt{"auto"} simply does
+  not restrict, while \texttt{"yes"} aborts with an error.
+\item Performance-core detection assumes all nodes in the run are
+  identical: it is only performed once, on the global root process,
+  and the result is broadcast to all other ranks rather than
+  independently rediscovered on every node. On a cluster with a
+  genuinely mixed node population, this would incorrectly apply the
+  root node's hybrid-CPU layout (or lack thereof) to every other node.
+\item Thread-layout arithmetic assumes every rank on a host runs the
+  same number of OpenMP threads as every other rank on that host (this
+  is not communicated or verified across ranks). A run that
+  deliberately assigns different thread counts to different ranks on
+  the same host will get an incorrect thread offset/layout computation.
+\end{itemize}
 
 \section{History}
 
 \subsection{Thorn Source Code}
 
+The source code lives in \texttt{CactusUtils/SystemTopology} in the
+Cactus Einstein Toolkit checkout.
+
 \subsection{Thorn Documentation}
 
+This document was last substantially revised in July 2026, to describe
+the handling of externally-restricted (job-scheduler/cgroup) CPU sets,
+NUMA memory binding, distance-matrix reporting, and restricting to
+performance cores only on heterogeneous (hybrid) CPUs -- the latter,
+along with the assumption of uniform per-rank thread counts, relying on
+all nodes used in a run being identical.
+
 \subsection{Acknowledgements}
+
+Written and maintained by Erik Schnetter.
 
 
 \begin{thebibliography}{9}

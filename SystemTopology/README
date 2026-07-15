@@ -6,7 +6,19 @@ Licence      : LGPL
 
 1. Purpose
 
-Report the system topology (nodes, cores, etc.) as reported by MPI and
-hwloc.
+Report the MPI process/host mapping and the node hardware topology
+(cores, PUs, caches, NUMA memory) as reported by MPI and hwloc.
 
-Set thread affinities.
+Optionally bind OpenMP threads -- and their memory allocations -- to
+specific processing units, automatically backing off if this process
+is already confined to part of the node by a job scheduler, cgroup, or
+launcher affinity setting. On heterogeneous (P-core/E-core) CPUs,
+optionally restrict to performance cores only.
+
+Expose the discovered topology to other thorns (e.g. Carpet/LoopControl,
+Carpet/CarpetLib, CactusUtils/MemSpeed) via aliased functions
+(GetNumSMTThreads, GetMaxSMTThreads, GetCacheInfo1, GetMPIProcessInfo),
+which use it to make cache- and NUMA-aware tiling and allocation
+decisions.
+
+See doc/documentation.tex for details.
