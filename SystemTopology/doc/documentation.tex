@@ -478,7 +478,21 @@ Cactus/Einstein Toolkit support channels.
   exposes core efficiency information to \emph{hwloc} (e.g. via
   \texttt{cpu\_capacity} in Linux \texttt{sysfs}, or natively on
   Windows~10 and macOS). On other systems, \texttt{"auto"} simply does
-  not restrict, while \texttt{"yes"} aborts with an error.
+  not restrict, while \texttt{"yes"} aborts with an error naming the
+  specific reason (compiled against too old an \emph{hwloc}, a
+  homogeneous CPU, or an unranked/unknown efficiency ordering).
+
+  What matters is the \emph{hwloc} this thorn was actually
+  \emph{compiled} against, which can differ from the one a command-line
+  tool like \texttt{lstopo} on the same machine uses (Cactus commonly
+  vendors and builds its own copy of \emph{hwloc} rather than using the
+  system's). A build against an \emph{hwloc} older than 2.4.0 disables
+  performance-core detection entirely, regardless of what
+  \texttt{lstopo --cpukinds} on that same machine can see; check which
+  \texttt{hwloc.h} this thorn's build actually used (e.g. \texttt{HWLOC\_DIR}
+  in your \texttt{OptionList}) and that header's \texttt{HWLOC\_API\_VERSION}
+  if \texttt{CACTUS\_USE\_PERFORMANCE\_CORES\_ONLY=auto} silently does not
+  restrict on a system you know is heterogeneous.
 \item Performance-core detection assumes all nodes in the run are
   identical: it is only performed once, on the global root process,
   and the result is broadcast to all other ranks rather than
@@ -490,6 +504,19 @@ Cactus/Einstein Toolkit support channels.
   is not communicated or verified across ranks). A run that
   deliberately assigns different thread counts to different ranks on
   the same host will get an incorrect thread offset/layout computation.
+\item The thread-binding algorithm (\texttt{set\_bindings}) further
+  assumes every core on the node has the same number of PUs (hardware
+  SMT threads). This is violated on heterogeneous CPUs with a mix of
+  performance and efficiency cores (e.g. 12th-generation-or-later Intel
+  desktop/laptop chips) whenever
+  \texttt{CACTUS\_USE\_PERFORMANCE\_CORES\_ONLY} does not end up
+  restricting to a uniform subset of cores -- including when it is left
+  at its \texttt{"auto"} default and \emph{hwloc} cannot reliably
+  identify performance cores on that system (see above). When this
+  happens, the thorn logs a warning and does not set thread CPU or
+  memory bindings for that run, rather than aborting it;
+  \texttt{GetNumSMTThreads}/\texttt{GetCacheInfo1} still work, but
+  report an approximate (rounded-down) PUs-per-core ratio in this case.
 \end{itemize}
 
 \section{History}

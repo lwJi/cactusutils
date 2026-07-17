@@ -564,38 +564,63 @@ void set_bindings(hwloc_topology_t topology,
     }
   }
 
+  // Determine and validate the per-host topology quantities once,
+  // single-threaded, before entering the parallel region below.
+  // hwloc/Cactus error handling is not safe to call concurrently from
+  // multiple OpenMP threads (a real, reachable case: on a
+  // heterogeneous CPU with performance and efficiency cores, e.g. a
+  // 12th-generation-or-later Intel desktop/laptop chip, every thread
+  // would independently hit the same "not a multiple" check below and
+  // try to abort at the same time, which previously segfaulted
+  // instead of cleanly reporting the error) -- and the values
+  // computed here are the same for every thread on this host anyway.
+  int const core_depth = hwloc_get_type_or_below_depth(topology, HWLOC_OBJ_CORE);
+  if (not(core_depth >= 0))
+    CCTK_VERROR("Could not determine hwloc depth of cores (got %d)",
+                core_depth);
+  int const num_cores = hwloc_get_nbobjs_by_depth(topology, core_depth);
+  if (not(num_cores > 0))
+    CCTK_VERROR("Could not determine number of cores (got %d)", num_cores);
+  int const pu_depth = hwloc_get_type_or_below_depth(topology, HWLOC_OBJ_PU);
+  if (not(pu_depth >= 0))
+    CCTK_VERROR("Could not determine hwloc depth of PUs (got %d)", pu_depth);
+  int const num_pus = hwloc_get_nbobjs_by_depth(topology, pu_depth);
+  if (not(num_pus > 0))
+    CCTK_VERROR("Could not determine number of PUs (got %d)", num_pus);
+  if (not(num_pus % num_cores == 0)) {
+    // This system has a heterogeneous core layout (e.g. a mix of
+    // performance and efficiency cores) that this thorn's binding
+    // algorithm -- which assumes every core has the same number of
+    // PUs -- cannot handle. Degrade gracefully rather than aborting
+    // the whole run: skip setting bindings, the same as when hwloc
+    // reports no binding support at all.
+    CCTK_VWarn(CCTK_WARN_ALERT, __LINE__, __FILE__, CCTK_THORNSTRING,
+               "Number of PUs (%d) is not a multiple of number of cores "
+               "(%d); this system has a heterogeneous core layout (e.g. a "
+               "mix of performance and efficiency cores) that this "
+               "thorn's binding algorithm cannot handle. Not setting "
+               "thread CPU or memory bindings. If this system has "
+               "performance/efficiency cores, setting "
+               "CACTUS_USE_PERFORMANCE_CORES_ONLY=yes may allow bindings "
+               "to be set, by restricting to a uniform set of cores, if "
+               "hwloc can reliably identify them.",
+               num_pus, num_cores);
+    return;
+  }
+  int const max_smt_threads = num_pus / num_cores;
+  int const num_threads_in_proc = omp_get_max_threads();
+  int const num_procs = host_mapping.mpi_num_procs_on_host;
+  int const num_threads = num_threads_in_proc * num_procs;
+  int const num_smt_threads = divup(num_threads, num_cores);
+  int const core_spacing =
+      dense_layout ? 1 : num_cores / (num_threads / num_smt_threads);
+  int const proc_num = host_mapping.mpi_proc_num_on_host;
+  int const thread_offset = num_threads_in_proc * proc_num;
+
   // TODO: use hwloc_distribute instead
   CCTK_INFO("Setting thread CPU bindings:");
 #pragma omp parallel
   {
-    // All quantities are per host
-    int const core_depth =
-        hwloc_get_type_or_below_depth(topology, HWLOC_OBJ_CORE);
-    if (not(core_depth >= 0))
-      CCTK_VERROR("Could not determine hwloc depth of cores (got %d)",
-                  core_depth);
-    int const num_cores = hwloc_get_nbobjs_by_depth(topology, core_depth);
-    if (not(num_cores > 0))
-      CCTK_VERROR("Could not determine number of cores (got %d)", num_cores);
-    int const pu_depth = hwloc_get_type_or_below_depth(topology, HWLOC_OBJ_PU);
-    if (not(pu_depth >= 0))
-      CCTK_VERROR("Could not determine hwloc depth of PUs (got %d)", pu_depth);
-    int const num_pus = hwloc_get_nbobjs_by_depth(topology, pu_depth);
-    if (not(num_pus > 0))
-      CCTK_VERROR("Could not determine number of PUs (got %d)", num_pus);
-    if (not(num_pus % num_cores == 0))
-      CCTK_VERROR(
-          "Number of PUs (%d) is not a multiple of number of cores (%d)",
-          num_pus, num_cores);
-    int const max_smt_threads = num_pus / num_cores;
-    int const num_threads_in_proc = omp_get_num_threads();
-    int const num_procs = host_mapping.mpi_num_procs_on_host;
-    int const num_threads = num_threads_in_proc * num_procs;
-    int const num_smt_threads = divup(num_threads, num_cores);
-    int const core_spacing =
-        dense_layout ? 1 : num_cores / (num_threads / num_smt_threads);
-    int const proc_num = host_mapping.mpi_proc_num_on_host;
-    int const thread_offset = num_threads_in_proc * proc_num;
     // Bind thread to exactly one PU
     for (int thread_num_in_proc = 0; thread_num_in_proc < num_threads_in_proc;
          ++thread_num_in_proc) {
@@ -604,26 +629,37 @@ void set_bindings(hwloc_topology_t topology,
         // Map requested threads to existing cores, oversubscribing
         // or spacing if necessary
         int const core_num = thread_num / num_smt_threads * core_spacing;
-        if (not(core_num < num_cores))
-          CCTK_VERROR("Computed core number %d is out of range (there are "
-                      "only %d cores) -- inconsistent thread/core layout",
-                      core_num, num_cores);
         // Map requested SMT threads to existing PUs,
         // oversubscribing if necessary
         int const pu_offset =
             thread_num % num_smt_threads * max_smt_threads / num_smt_threads;
-        if (not(pu_offset < max_smt_threads))
-          CCTK_VERROR("Computed PU offset %d is out of range (there are "
-                      "only %d SMT threads per core)",
-                      pu_offset, max_smt_threads);
         int const pu_num = core_num * max_smt_threads + pu_offset;
-        if (not(pu_num < num_pus))
-          CCTK_VERROR("Computed PU number %d is out of range (there are "
-                      "only %d PUs)",
-                      pu_num, num_pus);
+        // These are internal-consistency checks on the arithmetic
+        // above, not on external (e.g. hwloc-reported) data, but are
+        // still real CCTK_VERROR calls made from within a parallel
+        // region -- serialize them so that, if one ever does fire, only
+        // one thread attempts to report/abort at a time
+#pragma omp critical
+        {
+          if (not(core_num < num_cores))
+            CCTK_VERROR("Computed core number %d is out of range (there "
+                        "are only %d cores) -- inconsistent thread/core "
+                        "layout",
+                        core_num, num_cores);
+          if (not(pu_offset < max_smt_threads))
+            CCTK_VERROR("Computed PU offset %d is out of range (there are "
+                        "only %d SMT threads per core)",
+                        pu_offset, max_smt_threads);
+          if (not(pu_num < num_pus))
+            CCTK_VERROR("Computed PU number %d is out of range (there are "
+                        "only %d PUs)",
+                        pu_num, num_pus);
+        }
         hwloc_obj_t pu_obj = hwloc_get_obj_by_depth(topology, pu_depth, pu_num);
-        if (not pu_obj)
+        if (not pu_obj) {
+#pragma omp critical
           CCTK_VERROR("hwloc returned no object for PU number %d", pu_num);
+        }
         // hwloc_cpuset_t cpuset = hwloc_bitmap_dup(pu_obj->cpuset);
         hwloc_cpuset_t cpuset = pu_obj->cpuset;
         int ierr;
@@ -713,9 +749,20 @@ void node_topology_info_t::load(hwloc_topology_t const &topology,
 #endif
   if (not(num_pus > 0))
     CCTK_VERROR("Could not determine number of PUs (got %d)", num_pus);
-  if (not(num_pus % num_cores == 0))
-    CCTK_VERROR("Number of PUs (%d) is not a multiple of number of cores (%d)",
-                num_pus, num_cores);
+  if (not(num_pus % num_cores == 0)) {
+    // This system has a heterogeneous core layout (e.g. a mix of
+    // performance and efficiency cores), so there is no single
+    // "PUs per core" ratio. Unlike set_bindings, this function does
+    // not do any per-PU indexing that could go out of bounds, so it is
+    // safe to continue with an approximate (rounded-down) ratio rather
+    // than aborting the whole run.
+    CCTK_VWarn(CCTK_WARN_ALERT, __LINE__, __FILE__, CCTK_THORNSTRING,
+               "Number of PUs (%d) is not a multiple of number of cores "
+               "(%d); this system has a heterogeneous core layout (e.g. a "
+               "mix of performance and efficiency cores). Reporting an "
+               "approximate (rounded-down) number of PUs per core.",
+               num_pus, num_cores);
+  }
   max_smt_threads = num_pus / num_cores;
   printf("  There are %d PUs per core (aka hardware SMT threads)\n",
          max_smt_threads);
@@ -955,17 +1002,37 @@ ST_GetMPIProcessInfo(CCTK_INT *restrict const mpi_num_procs,
 
 namespace {
 
+// Distinguishes *why* performance cores could not be identified, so
+// that CACTUS_USE_PERFORMANCE_CORES_ONLY=yes can report a precise
+// reason rather than a generic failure.
+enum performance_cores_detect_status_t {
+  perfcore_detect_ok,
+  // This thorn was compiled against an hwloc version older than
+  // 2.4.0, which does not have the cpukinds API at all -- independent
+  // of what the hwloc used at run time (e.g. by lstopo) might support.
+  // This is common when Cactus vendors its own hwloc build separately
+  // from the system's.
+  perfcore_detect_no_cpukinds_api,
+  // hwloc reports at most one CPU kind: this system is homogeneous.
+  perfcore_detect_homogeneous,
+  // hwloc reports more than one kind, but cannot reliably rank them
+  // by efficiency (all kinds report efficiency -1, in no particular
+  // order), or an unexpected hwloc call failure occurred.
+  perfcore_detect_unknown_efficiency
+};
+
 // Query hwloc's cpukinds API to find the highest-efficiency CPU kind's
 // PU set, but only if hwloc can reliably identify one: there must be
 // more than one kind, and every kind's efficiency must be known
 // (hwloc reports -1 for all kinds, in no particular order, if it
-// cannot rank them). Returns true and fills perf_cpuset on success.
-bool detect_performance_cores(hwloc_topology_t topology,
-                              hwloc_bitmap_t perf_cpuset) {
+// cannot rank them). Fills perf_cpuset only on perfcore_detect_ok.
+performance_cores_detect_status_t
+detect_performance_cores(hwloc_topology_t topology,
+                         hwloc_bitmap_t perf_cpuset) {
 #if (HWLOC_API_VERSION >= 0x00020400)
   int const num_kinds = hwloc_cpukinds_get_nr(topology, 0);
   if (num_kinds <= 1)
-    return false;
+    return perfcore_detect_homogeneous;
 
   int best_kind = -1;
   int best_efficiency = -1;
@@ -974,7 +1041,7 @@ bool detect_performance_cores(hwloc_topology_t topology,
     int const ierr = hwloc_cpukinds_get_info(topology, kind, NULL, &efficiency,
                                              NULL, NULL, 0);
     if (ierr or efficiency < 0)
-      return false;
+      return perfcore_detect_unknown_efficiency;
     if (efficiency > best_efficiency) {
       best_efficiency = efficiency;
       best_kind = kind;
@@ -983,9 +1050,9 @@ bool detect_performance_cores(hwloc_topology_t topology,
 
   int const ierr = hwloc_cpukinds_get_info(topology, best_kind, perf_cpuset,
                                            &best_efficiency, NULL, NULL, 0);
-  return not ierr;
+  return ierr ? perfcore_detect_unknown_efficiency : perfcore_detect_ok;
 #else
-  return false;
+  return perfcore_detect_no_cpukinds_api;
 #endif
 }
 
@@ -1017,14 +1084,17 @@ bool restrict_to_performance_cores(hwloc_topology_t topology,
 
   // status: 0 = do not restrict; 1 = restrict to the cpuset that
   // follows in cpuset_buf; 2 = restriction was mandatory, but hwloc
-  // could not reliably identify performance cores
+  // could not reliably identify performance cores (see detect_status
+  // for why)
   int status = 0;
+  int detect_status = perfcore_detect_homogeneous;
   char cpuset_buf[2048] = "";
 
   if (host_mapping.mpi_proc_num == root) {
     hwloc_bitmap_t const perf_cpuset = hwloc_bitmap_alloc();
     if (perf_cpuset) {
-      if (detect_performance_cores(topology, perf_cpuset)) {
+      detect_status = detect_performance_cores(topology, perf_cpuset);
+      if (detect_status == perfcore_detect_ok) {
         status = 1;
         hwloc_bitmap_list_snprintf(cpuset_buf, sizeof cpuset_buf, perf_cpuset);
       }
@@ -1036,14 +1106,40 @@ bool restrict_to_performance_cores(hwloc_topology_t topology,
 
 #ifdef HAVE_CAPABILITY_MPI
   MPI_Bcast(&status, 1, MPI_INT, root, MPI_COMM_WORLD);
+  MPI_Bcast(&detect_status, 1, MPI_INT, root, MPI_COMM_WORLD);
   MPI_Bcast(cpuset_buf, sizeof cpuset_buf, MPI_CHAR, root, MPI_COMM_WORLD);
 #endif
 
-  if (status == 2)
-    CCTK_ERROR("use_performance_cores_only is set to \"yes\", but hwloc "
-               "could not reliably identify performance cores (checked "
-               "once, on the root process, since all nodes are assumed "
-               "identical)");
+  if (status == 2) {
+    // Checked once, on the root process, since all nodes are assumed
+    // identical
+    switch (detect_status) {
+    case perfcore_detect_no_cpukinds_api:
+      CCTK_VERROR(
+          "CACTUS_USE_PERFORMANCE_CORES_ONLY is set to \"yes\", but this "
+          "thorn was compiled against hwloc API version 0x%06x, which is "
+          "older than 0x00020400 (hwloc 2.4.0) required for CPU-kind "
+          "detection -- independent of what any hwloc used at run time "
+          "(e.g. by lstopo) supports. Rebuild against a newer hwloc (check "
+          "which hwloc this thorn's build actually used, e.g. via "
+          "HWLOC_DIR in your OptionList) to use this feature.",
+          HWLOC_API_VERSION);
+      break;
+    case perfcore_detect_homogeneous:
+      CCTK_VERROR("CACTUS_USE_PERFORMANCE_CORES_ONLY is set to \"yes\", but "
+                  "this system does not report more than one CPU kind "
+                  "(hwloc sees it as homogeneous)");
+      break;
+    case perfcore_detect_unknown_efficiency:
+      CCTK_VERROR("CACTUS_USE_PERFORMANCE_CORES_ONLY is set to \"yes\", but "
+                  "hwloc could not determine a reliable CPU-kind efficiency "
+                  "ranking on this system");
+      break;
+    default:
+      CCTK_VERROR("CACTUS_USE_PERFORMANCE_CORES_ONLY is set to \"yes\", but "
+                  "hwloc could not identify performance cores");
+    }
+  }
   if (status == 0)
     return false;
 
